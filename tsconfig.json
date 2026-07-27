@@ -20,6 +20,14 @@
     "forceConsistentCasingInFileNames": true,
     "noImplicitAny": false,
     "strictBindCallApply": false,
-    "noFallthroughCasesInSwitch": false
+    "noFallthroughCasesInSwitch": false,
+    "paths": {
+      "@app/contracts": [
+        "lib/contracts/src"
+      ],
+      "@app/contracts/*": [
+        "lib/contracts/src/*"
+      ]
+    }
   }
 }

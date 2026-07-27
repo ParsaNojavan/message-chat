@@ -1,2 +1,3 @@
 allowBuilds:
+  bcrypt: false
   unrs-resolver: false
