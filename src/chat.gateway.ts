@@ -106,12 +106,25 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   @UseGuards(WsJwtGuard)
+  @SubscribeMessage('room.typing')
+  async handleTyping(
+    @ConnectedSocket() client: AuthenticatedSocket,
+    @MessageBody() body: { roomId: string, isTyping: boolean },
+  ) {
+    client.to(body.roomId).emit('room.typing.event', {
+      roomId: body.roomId,
+      userId: client.data.user.sub,
+      isTyping: body.isTyping,
+    });
+  }
+
+  @UseGuards(WsJwtGuard)
   @SubscribeMessage('room.leave')
   async handleLeaveRoom(@ConnectedSocket() client: AuthenticatedSocket,
     @MessageBody() body: { roomId: string }): Promise<WsResponse<any>> {
-      await client.leave(body.roomId);
+    await client.leave(body.roomId);
 
-      return {
+    return {
       event: 'room.leave.result',
       data: {
         message: `left room ${body.roomId}`,
