@@ -6,6 +6,10 @@ import { ChatGateway } from './chat.gateway';
 import { WsJwtGuard } from '@app/contracts/utils/jwt_token/guards/ws.guard';
 import { ChatController } from './chat.controller';
 import { ChatService } from './chat.service';
+import { MongooseModule } from '@nestjs/mongoose';
+import Room, { RoomSchema } from './models/concrete/room';
+import RoomMember, { RoomMemberSchema } from './models/concrete/member';
+import Message, { MessageSchema } from './models/concrete/message';
 
 @Module({
   imports: [
@@ -29,6 +33,13 @@ import { ChatService } from './chat.service';
         };
       },
     }),
+
+    MongooseModule.forRoot(process.env.MONGO_STRING?.toString() ?? '', { dbName: 'message_chatdb' }),
+     MongooseModule.forFeature([
+      { name: Room.name, schema: RoomSchema },
+      { name: RoomMember.name, schema: RoomMemberSchema },
+      { name: Message.name, schema: MessageSchema },
+    ]),
   ],
   controllers: [ChatController],
   providers: [ChatGateway, WsJwtGuard, ChatService],
