@@ -5,6 +5,7 @@ import {
   OnGatewayDisconnect,
   SubscribeMessage,
   WebSocketGateway,
+  WebSocketServer,
 } from '@nestjs/websockets';
 import type { WsResponse } from '@nestjs/websockets';
 import { UseGuards, Logger } from '@nestjs/common';
@@ -12,6 +13,7 @@ import { WsJwtGuard } from '@app/contracts/utils/jwt_token/guards/ws.guard';
 import { Claims } from '@app/contracts/utils/crossCuttingConcerns/decorators/claims.decorator';
 import type { AuthenticatedSocket } from '@app/contracts/utils/jwt_token/authenticatedSocket';
 import { JwtService } from '@nestjs/jwt';
+import { Server } from 'socket.io';
 
 @WebSocketGateway({
   cors: {
@@ -51,6 +53,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   handleDisconnect(client: AuthenticatedSocket) {
     this.logger.log(`Client disconnected: ${client.data.user}`);
   }
+
+  @WebSocketServer()
+  server: Server;
 
   @UseGuards(WsJwtGuard)
   @SubscribeMessage('ping')
@@ -101,8 +106,31 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   @UseGuards(WsJwtGuard)
-  @SubscribeMessage('room.message')
-  async handleRoomMessage(@ConnectedSocket() client: AuthenticatedSocket,) {
+  @SubscribeMessage('room.leave')
+  async handleLeaveRoom(@ConnectedSocket() client: AuthenticatedSocket,
+    @MessageBody() body: { roomId: string }): Promise<WsResponse<any>> {
+      await client.leave(body.roomId);
 
+      return {
+      event: 'room.leave.result',
+      data: {
+        message: `left room ${body.roomId}`,
+        roomId: body.roomId,
+        user: client.data.user,
+      },
+    };
+  }
+
+  @UseGuards(WsJwtGuard)
+  @SubscribeMessage('room.message')
+  async handleRoomMessage(@ConnectedSocket() client: AuthenticatedSocket,
+    @MessageBody() body: { roomId: string, message: string }) {
+    const payload = {
+      sender: client.data.user.sub,
+      text: body.message,
+      createdAt: new Date(),
+    };
+
+    this.server.to(body.roomId).emit('room.message.new', payload);
   }
 }
