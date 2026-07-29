@@ -11,6 +11,7 @@ import { UseGuards, Logger } from '@nestjs/common';
 import { WsJwtGuard } from '@app/contracts/utils/jwt_token/guards/ws.guard';
 import { Claims } from '@app/contracts/utils/crossCuttingConcerns/decorators/claims.decorator';
 import type { AuthenticatedSocket } from '@app/contracts/utils/jwt_token/authenticatedSocket';
+import { JwtService } from '@nestjs/jwt';
 
 @WebSocketGateway({
   cors: {
@@ -18,10 +19,33 @@ import type { AuthenticatedSocket } from '@app/contracts/utils/jwt_token/authent
   },
 })
 export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
+
+  constructor(private readonly jwtService: JwtService) { }
+
   private readonly logger = new Logger(ChatGateway.name);
 
-  handleConnection(client: AuthenticatedSocket) {
-    this.logger.log(`Client connected: ${client.data.user}`);
+  async handleConnection(client: AuthenticatedSocket) {
+    const token = client.handshake.auth?.token ?? client.handshake.query?.token;
+
+    if (!token) {
+      client.disconnect();
+      return;
+    }
+
+    try {
+      const payload = await this.jwtService.verifyAsync(token, {
+        secret: process.env.JWT_SECRET,
+      });
+
+      client.data = {
+        user: payload,
+      };
+    }
+    catch (error) {
+      client.disconnect();
+      return;
+    }
+
   }
 
   handleDisconnect(client: AuthenticatedSocket) {
@@ -41,14 +65,14 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   @UseGuards(WsJwtGuard)
-  @Claims('chat.send')
-  @SubscribeMessage('send_message')
-  handleSendMessage(
+  @Claims('admin')
+  @SubscribeMessage('server.message')
+  handleServerMessage(
     @ConnectedSocket() client: AuthenticatedSocket,
     @MessageBody() body: { text: string },
   ): WsResponse<any> {
     return {
-      event: 'send_message_result',
+      event: 'server.message.result',
       data: {
         message: 'message accepted',
         text: body.text,
@@ -58,19 +82,27 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   @UseGuards(WsJwtGuard)
-  @Claims('chat.join')
-  @SubscribeMessage('join_room')
-  handleJoinRoom(
+  @SubscribeMessage('room.join')
+  async handleJoinRoom(
     @ConnectedSocket() client: AuthenticatedSocket,
     @MessageBody() body: { roomId: string },
-  ): WsResponse<any> {
+  ): Promise<WsResponse<any>> {
+
+    await client.join(body.roomId);
+
     return {
-      event: 'join_room_result',
+      event: 'room.join.result',
       data: {
         message: `joined room ${body.roomId}`,
         roomId: body.roomId,
         user: client.data.user,
       },
     };
+  }
+
+  @UseGuards(WsJwtGuard)
+  @SubscribeMessage('room.message')
+  async handleRoomMessage(@ConnectedSocket() client: AuthenticatedSocket,) {
+
   }
 }
