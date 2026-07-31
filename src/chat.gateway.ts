@@ -14,6 +14,7 @@ import { Claims } from '@app/contracts/utils/crossCuttingConcerns/decorators/cla
 import type { AuthenticatedSocket } from '@app/contracts/utils/jwt_token/authenticatedSocket';
 import { JwtService } from '@nestjs/jwt';
 import { Server } from 'socket.io';
+import { ChatService } from './chat.service';
 
 @WebSocketGateway({
   cors: {
@@ -22,7 +23,8 @@ import { Server } from 'socket.io';
 })
 export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
-  constructor(private readonly jwtService: JwtService) { }
+  constructor(private readonly chatService: ChatService,
+    private readonly jwtService: JwtService) { }
 
   private readonly logger = new Logger(ChatGateway.name);
 
@@ -93,6 +95,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() body: { roomId: string },
   ): Promise<WsResponse<any>> {
 
+    await this.chatService.joinRoom(body.roomId, client.data.user.sub);
     await client.join(body.roomId);
 
     return {
@@ -143,6 +146,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       text: body.message,
       createdAt: new Date(),
     };
+
+    this.chatService.createMessage(body.roomId, {
+      senderId: payload.sender,
+      content: body.message
+    });
 
     this.server.to(body.roomId).emit('room.message.new', payload);
   }
