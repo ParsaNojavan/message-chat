@@ -10,6 +10,9 @@ import { MongooseModule } from '@nestjs/mongoose';
 import Room, { RoomSchema } from './models/concrete/room';
 import RoomMember, { RoomMemberSchema } from './models/concrete/member';
 import Message, { MessageSchema } from './models/concrete/message';
+import { GroupController } from './group/group.controller';
+import { GroupService } from './group/group.service';
+import { GroupModule } from './group/group.module';
 
 @Module({
   imports: [
@@ -35,13 +38,14 @@ import Message, { MessageSchema } from './models/concrete/message';
     }),
 
     MongooseModule.forRoot(process.env.MONGO_STRING?.toString() ?? '', { dbName: 'message_chatdb' }),
-     MongooseModule.forFeature([
+    MongooseModule.forFeature([
       { name: Room.name, schema: RoomSchema },
       { name: RoomMember.name, schema: RoomMemberSchema },
       { name: Message.name, schema: MessageSchema },
     ]),
+    GroupModule,
   ],
   controllers: [ChatController],
   providers: [ChatGateway, WsJwtGuard, ChatService],
 })
-export class ChatModule {}
+export class ChatModule { }
