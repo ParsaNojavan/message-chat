@@ -13,6 +13,7 @@ import Message, { MessageSchema } from './models/concrete/message';
 import { GroupController } from './group/group.controller';
 import { GroupService } from './group/group.service';
 import { GroupModule } from './group/group.module';
+import { DirectModule } from './direct/direct.module';
 
 @Module({
   imports: [
@@ -44,6 +45,7 @@ import { GroupModule } from './group/group.module';
       { name: Message.name, schema: MessageSchema },
     ]),
     GroupModule,
+    DirectModule,
   ],
   controllers: [ChatController],
   providers: [ChatGateway, WsJwtGuard, ChatService],
