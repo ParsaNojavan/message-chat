@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import Room from './models/concrete/room';
 import { Model, Types } from 'mongoose';
@@ -7,12 +7,14 @@ import RoomMember from './models/concrete/member';
 import { ChatGateway } from './chat.gateway';
 import { RoleType } from '@app/contracts/models/enums/role-type';
 import MessageDto from '@app/contracts/models/dtos/chat/message.dto';
+import Redis from 'ioredis';
 
 @Injectable()
 export class ChatService {
   constructor(@InjectModel(Room.name) private roomModel: Model<Room>,
     @InjectModel(Message.name) private messageModel: Model<Message>,
-    @InjectModel(RoomMember.name) private memberModel: Model<RoomMember>) { }
+    @InjectModel(RoomMember.name) private memberModel: Model<RoomMember>,
+    @Inject('REDIS_CLIENT') private readonly redis: Redis,) { }
 
   async isUserMemberOfRoom(roomId: string, userId: string): Promise<boolean> {
     const isMember = await this.memberModel.exists({
@@ -71,4 +73,47 @@ export class ChatService {
 
     return message;
   }
+
+  async setUserOnline(userId: string) {
+    const key = `presence:user-status:${userId}`;
+    const connectionCount = await this.redis.incr(key);
+
+    if (connectionCount === 1) {
+      const eventData = JSON.stringify({ userId, status: 'online' });
+      await this.redis.publish('presence:events', eventData);
+    }
+  }
+
+  async setUserOffline(userId: string) {
+    const key = `presence:user-status:${userId}`;
+    const connectionCount = await this.redis.decr(key);
+
+    if (connectionCount === 0) {
+
+      const eventData = JSON.stringify({ userId, status: 'offline' });
+      await this.redis.publish('presence:events', eventData);
+
+      await this.redis.del(key);
+    } else if (connectionCount < 0) {
+      await this.redis.del(key);
+    }
+  }
+
+  async getUsersPresence(userIds: string[]): Promise<Record<string, string>> {
+    if (!userIds || userIds.length === 0) return {};
+
+    const keys = userIds.map((id) => `presence:user-status:${id}`);
+    const connectionCounts = await this.redis.mget(keys);
+
+    const result: Record<string, string> = {};
+
+    userIds.forEach((id, index) => {
+      const val = connectionCounts[index];
+      const count = val ? parseInt(val, 10) : 0;
+      result[id] = count > 0 ? 'online' : 'offline';
+    });
+
+    return result;
+  }
+
 }
