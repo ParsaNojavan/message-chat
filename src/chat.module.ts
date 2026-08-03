@@ -14,6 +14,7 @@ import { GroupController } from './group/group.controller';
 import { GroupService } from './group/group.service';
 import { GroupModule } from './group/group.module';
 import { DirectModule } from './direct/direct.module';
+import { RtcModule } from './rtc/rtc.module';
 
 @Module({
   imports: [
@@ -46,6 +47,7 @@ import { DirectModule } from './direct/direct.module';
     ]),
     GroupModule,
     DirectModule,
+    RtcModule,
   ],
   controllers: [ChatController],
   providers: [ChatGateway, WsJwtGuard, ChatService],
