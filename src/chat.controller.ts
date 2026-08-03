@@ -8,11 +8,16 @@ export class ChatController {
   constructor(private readonly chatService: ChatService) { }
 
   @MessagePattern('users-status.check')
-  async getPresences(@Payload() data: { userIds: string[] }) {
-    if (!data.userIds || data.userIds.length === 0) {
+  async getPresences(
+    @Payload() payload: { userIds: string[] },
+  ) {
+    console.log(payload.userIds);
+
+    if (!payload.userIds?.length) {
       return [];
     }
 
-    return await this.chatService.getUsersPresence(data.userIds)
+    return this.chatService.getUsersPresence(payload.userIds);
   }
+
 }

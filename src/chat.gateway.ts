@@ -26,7 +26,7 @@ export class ChatGateway implements OnModuleInit, OnGatewayConnection, OnGateway
 
   constructor(private readonly chatService: ChatService,
     private readonly jwtService: JwtService,
-    @Inject('REDIS_CLIENT') private readonly redis: Redis,) { }
+    @Inject('REDIS_SUB_CLIENT') private readonly redis: Redis,) { }
 
   async onModuleInit() {
     await this.redis.subscribe('presence:events');
