@@ -15,6 +15,7 @@ import { GroupService } from './group/group.service';
 import { GroupModule } from './group/group.module';
 import { DirectModule } from './direct/direct.module';
 import { RtcModule } from './rtc/rtc.module';
+import Redis from 'ioredis';
 
 @Module({
   imports: [
@@ -50,6 +51,19 @@ import { RtcModule } from './rtc/rtc.module';
     RtcModule,
   ],
   controllers: [ChatController],
-  providers: [ChatGateway, WsJwtGuard, ChatService],
+  providers: [ChatGateway, WsJwtGuard, ChatService,
+    {
+      provide: 'REDIS_CLIENT',
+      useFactory: (configService: ConfigService) => {
+        return new Redis({
+          host: configService.get<string>('REDIS_HOST', 'localhost'),
+          port: configService.get<number>('REDIS_PORT', 6379),
+          username: configService.get<string>('REDIS_USERNAME'),
+          password: configService.get<string>('REDIS_PASSWORD'),
+        });
+      },
+      inject: [ConfigService]
+    }
+  ],
 })
 export class ChatModule { }

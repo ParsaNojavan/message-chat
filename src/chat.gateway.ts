@@ -8,23 +8,38 @@ import {
   WebSocketServer,
 } from '@nestjs/websockets';
 import type { WsResponse } from '@nestjs/websockets';
-import { UseGuards, Logger } from '@nestjs/common';
+import { UseGuards, Logger, OnModuleInit, Inject } from '@nestjs/common';
 import { WsJwtGuard } from '@app/contracts/utils/jwt_token/guards/ws.guard';
 import { Claims } from '@app/contracts/utils/crossCuttingConcerns/decorators/claims.decorator';
 import type { AuthenticatedSocket } from '@app/contracts/utils/jwt_token/authenticatedSocket';
 import { JwtService } from '@nestjs/jwt';
 import { Server } from 'socket.io';
 import { ChatService } from './chat.service';
+import Redis from 'ioredis';
 
 @WebSocketGateway({
   cors: {
     origin: '*',
   },
 })
-export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class ChatGateway implements OnModuleInit, OnGatewayConnection, OnGatewayDisconnect {
 
   constructor(private readonly chatService: ChatService,
-    private readonly jwtService: JwtService) { }
+    private readonly jwtService: JwtService,
+    @Inject('REDIS_CLIENT') private readonly redis: Redis,) { }
+
+  async onModuleInit() {
+    await this.redis.subscribe('presence:events');
+
+    this.redis.on('message', (channel, message) => {
+      if (channel === 'presence:events') {
+        
+        const presenceData = JSON.parse(message);
+        
+        this.server.emit('presence.update', presenceData);
+      }
+    });
+  }
 
   private readonly logger = new Logger(ChatGateway.name);
 
@@ -44,6 +59,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       client.data = {
         user: payload,
       };
+
+      await this.chatService.setUserOnline(payload.sub);
     }
     catch (error) {
       client.disconnect();
@@ -52,8 +69,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   }
 
-  handleDisconnect(client: AuthenticatedSocket) {
+  async handleDisconnect(client: AuthenticatedSocket) {
     this.logger.log(`Client disconnected: ${client.data.user}`);
+    await this.chatService.setUserOffline(client.data.user.sub);
   }
 
   @WebSocketServer()
