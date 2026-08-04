@@ -30,13 +30,24 @@ export class ChatGateway implements OnModuleInit, OnGatewayConnection, OnGateway
 
   async onModuleInit() {
     await this.redis.subscribe('presence:events');
+    await this.redis.subscribe('notifications:event');
 
     this.redis.on('message', (channel, message) => {
       if (channel === 'presence:events') {
-        
+
         const presenceData = JSON.parse(message);
-        
+
         this.server.emit('presence.update', presenceData);
+      }
+      else if (channel === 'notifications:event') {
+        const payload = JSON.parse(message);
+
+        if (payload.recipientIds && Array.isArray(payload.recipientIds)) {
+          payload.recipientIds.forEach(userId => {
+
+            this.server.to(userId).emit('new_notification', payload);
+          });
+        }
       }
     });
   }
@@ -60,6 +71,7 @@ export class ChatGateway implements OnModuleInit, OnGatewayConnection, OnGateway
         user: payload,
       };
 
+      await client.join(payload.sub);
       await this.chatService.setUserOnline(payload.sub);
     }
     catch (error) {
@@ -70,6 +82,7 @@ export class ChatGateway implements OnModuleInit, OnGatewayConnection, OnGateway
   }
 
   async handleDisconnect(client: AuthenticatedSocket) {
+    await client.leave(client.data.user.sub);
     this.logger.log(`Client disconnected: ${client.data.user}`);
     await this.chatService.setUserOffline(client.data.user.sub);
   }

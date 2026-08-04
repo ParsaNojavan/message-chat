@@ -16,6 +16,7 @@ import { GroupModule } from './group/group.module';
 import { DirectModule } from './direct/direct.module';
 import { RtcModule } from './rtc/rtc.module';
 import Redis from 'ioredis';
+import { ClientsModule, Transport } from '@nestjs/microservices';
 
 @Module({
   imports: [
@@ -39,6 +40,16 @@ import Redis from 'ioredis';
         };
       },
     }),
+    ClientsModule.register([
+      {
+        name: 'notification-client',
+        transport: Transport.REDIS,
+        options: {
+          host: process.env.REDIS_HOST ?? 'localhost',
+          port: parseInt(process.env.REDIS_PORT ?? '6379')
+        }
+      }
+    ]),
 
     MongooseModule.forRoot(process.env.MONGO_STRING?.toString() ?? '', { dbName: 'message_chatdb' }),
     MongooseModule.forFeature([

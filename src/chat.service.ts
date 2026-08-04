@@ -8,13 +8,15 @@ import { ChatGateway } from './chat.gateway';
 import { RoleType } from '@app/contracts/models/enums/role-type';
 import MessageDto from '@app/contracts/models/dtos/chat/message.dto';
 import Redis from 'ioredis';
+import { ClientProxy } from '@nestjs/microservices';
 
 @Injectable()
 export class ChatService {
   constructor(@InjectModel(Room.name) private roomModel: Model<Room>,
     @InjectModel(Message.name) private messageModel: Model<Message>,
     @InjectModel(RoomMember.name) private memberModel: Model<RoomMember>,
-    @Inject('REDIS_CLIENT') private readonly redis: Redis,) { }
+    @Inject('REDIS_CLIENT') private readonly redis: Redis,
+    @Inject('notification-client') private notificationClient: ClientProxy) { }
 
   async isUserMemberOfRoom(roomId: string, userId: string): Promise<boolean> {
     const isMember = await this.memberModel.exists({
@@ -26,13 +28,17 @@ export class ChatService {
   }
 
   async joinRoom(roomId: string, userId: string): Promise<void> {
-    const room = await this.roomModel.findById(roomId);
+    const room = await this.roomModel.findById(new Types.ObjectId(roomId));
     if (!room) throw new NotFoundException("Room not found");
+
+    console.log(room)
 
     const existingRoom = await this.memberModel.findOne({
       roomId: new Types.ObjectId(roomId),
       userId: new Types.ObjectId(userId)
     });
+
+    console.log(existingRoom)
 
     if (!existingRoom) {
       await this.memberModel.create({
@@ -71,6 +77,28 @@ export class ChatService {
       content: messageDto.content
     })
 
+    const members = await this.memberModel
+      .find({
+        roomId: new Types.ObjectId(roomId),
+        userId: { $ne: new Types.ObjectId(messageDto.senderId) },
+      })
+      .select('userId')
+      .lean();
+
+      console.log(members)
+
+    const recipientIds = members.map((m) => m.userId.toString());
+
+    this.notificationClient.emit('notification.send', {
+      senderId: message.senderId.toString(),
+      recipientIds: recipientIds,
+      messageId: message._id.toString(),
+      messagePreview:
+        message.content.length > 50
+          ? `${message.content.substring(0, 50)}...`
+          : message.content,
+      roomId: roomId,
+    });
     return message;
   }
 
