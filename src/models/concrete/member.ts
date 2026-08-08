@@ -10,7 +10,7 @@ export default class RoomMember extends Document implements IEntity {
     role: RoleType
     @Prop({ type: Types.ObjectId, ref: 'Room', required: true, index: true })
     roomId: Types.ObjectId
-    @Prop({ type: Types.ObjectId, ref: 'User', required: true, index: true })
+    @Prop({ type: Types.ObjectId, required: true, index: true })
     userId: Types.ObjectId
     @Prop({ type: Date, default: Date.now })
     joinedAt: Date;

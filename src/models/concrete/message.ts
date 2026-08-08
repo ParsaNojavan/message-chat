@@ -8,10 +8,15 @@ import { RoleType } from "@app/contracts/models/enums/role-type"
 export default class Message extends Document implements IEntity {
     @Prop({ type: Types.ObjectId, ref: 'Room', required: true, index: true })
     roomId: Types.ObjectId
-    @Prop({ type: Types.ObjectId, ref: 'User', required: true, index: true })
+    @Prop({ type: Types.ObjectId, required: true, index: true })
     senderId: Types.ObjectId
     @Prop()
     content: string;
+    @Prop({ default: false })
+    isRead: boolean;
+    @Prop({ type: [{ type: Types.ObjectId }], default: [] })
+    readBy: Types.ObjectId[];
+
 }
 
 export type RoomDocument = Message & Document & {
