@@ -85,8 +85,6 @@ export class ChatService {
       .select('userId')
       .lean();
 
-      console.log(members)
-
     const recipientIds = members.map((m) => m.userId.toString());
 
     this.notificationClient.emit('notification.send', {
@@ -142,6 +140,28 @@ export class ChatService {
     });
 
     return result;
+  }
+
+  async markAsSeen(roomId: string, userId: string, messageIds: string[]) {
+    await this.messageModel.updateMany(
+      { _id: { $in: messageIds }, roomId: roomId },
+      { $set: { isRead: true }, $addToSet: { readBy: userId } }
+    );
+
+    this.notificationClient.emit('notification.read', {
+      roomId,
+      userId,
+      messageIds
+    });
+
+    await this.redis.publish(`messages:events`, JSON.stringify({
+      event: 'messages.seen',
+      data: {
+        roomId,
+        userId,
+        messageIds,
+      }
+    }));
   }
 
 }
