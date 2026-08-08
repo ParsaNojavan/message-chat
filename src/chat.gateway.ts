@@ -31,6 +31,7 @@ export class ChatGateway implements OnModuleInit, OnGatewayConnection, OnGateway
   async onModuleInit() {
     await this.redis.subscribe('presence:events');
     await this.redis.subscribe('notifications:event');
+    await this.redis.subscribe('messages:event');
 
     this.redis.on('message', (channel, message) => {
       if (channel === 'presence:events') {
@@ -42,10 +43,26 @@ export class ChatGateway implements OnModuleInit, OnGatewayConnection, OnGateway
       else if (channel === 'notifications:event') {
         const payload = JSON.parse(message);
 
-        if (payload.recipientIds && Array.isArray(payload.recipientIds)) {
+        if (payload.type === 'notification.send') {
           payload.recipientIds.forEach(userId => {
 
             this.server.to(userId).emit('new_notification', payload);
+          });
+        }
+        else if (payload.type === 'notification.read') {
+          payload.recipientIds.forEach(userId => {
+
+            this.server.to(userId).emit('seen_notification', payload);
+          });
+        }
+      }
+      else if (channel === 'messages:event') {
+        const payload = JSON.parse(message);
+
+        if (payload.recipientIds && Array.isArray(payload.recipientIds)) {
+          payload.recipientIds.forEach(userId => {
+
+            this.server.to(userId).emit('seen_messages', payload);
           });
         }
       }
