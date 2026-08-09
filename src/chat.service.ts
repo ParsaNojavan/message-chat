@@ -70,11 +70,17 @@ export class ChatService {
     return members;
   }
 
-  async createMessage(roomId: string, messageDto: MessageDto): Promise<Message> {
+  async createMessage(roomId: string, messageDto: MessageDto, media?: {
+        mediaId: string;
+        url: string;
+        type: string;
+      }[]): Promise<Message> {
+
     const message = await this.messageModel.create({
       roomId: roomId,
       senderId: messageDto.senderId,
-      content: messageDto.content
+      content: messageDto.content,
+      media: media
     })
 
     const members = await this.memberModel

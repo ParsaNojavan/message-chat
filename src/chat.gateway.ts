@@ -188,17 +188,24 @@ export class ChatGateway implements OnModuleInit, OnGatewayConnection, OnGateway
   @UseGuards(WsJwtGuard)
   @SubscribeMessage('room.message')
   async handleRoomMessage(@ConnectedSocket() client: AuthenticatedSocket,
-    @MessageBody() body: { roomId: string, message: string }) {
+    @MessageBody() body: {
+      roomId: string, message: string, media?: {
+        mediaId: string;
+        url: string;
+        type: string;
+      }[]
+    }) {
     const payload = {
       sender: client.data.user.sub,
       text: body.message,
       createdAt: new Date(),
+      media: body.media
     };
 
     this.chatService.createMessage(body.roomId, {
       senderId: payload.sender,
-      content: body.message
-    });
+      content: body.message,
+    },body.media);
 
     this.server.to(body.roomId).emit('room.message.new', payload);
   }
