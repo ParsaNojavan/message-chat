@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { HttpStatus, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import Room from './models/concrete/room';
 import { Model, Types } from 'mongoose';
@@ -9,6 +9,8 @@ import { RoleType } from '@app/contracts/models/enums/role-type';
 import MessageDto from '@app/contracts/models/dtos/chat/message.dto';
 import Redis from 'ioredis';
 import { ClientProxy } from '@nestjs/microservices';
+import { Context } from 'vm';
+import DataResultDto from '@app/contracts/models/dtos/dataResultDto';
 
 @Injectable()
 export class ChatService {
@@ -71,10 +73,10 @@ export class ChatService {
   }
 
   async createMessage(roomId: string, messageDto: MessageDto, media?: {
-        mediaId: string;
-        url: string;
-        type: string;
-      }[]): Promise<Message> {
+    mediaId: string;
+    url: string;
+    type: string;
+  }[]): Promise<Message> {
 
     const message = await this.messageModel.create({
       roomId: roomId,
@@ -148,7 +150,10 @@ export class ChatService {
     return result;
   }
 
-  async markAsSeen(roomId: string, userId: string, messageIds: string[]) {
+  async markAsSeen(roomId: string, messageIds: string[], context: Context): Promise<DataResultDto<any>> {
+
+    const userId = context.sub;
+
     await this.messageModel.updateMany(
       { _id: { $in: messageIds }, roomId: roomId },
       { $set: { isRead: true }, $addToSet: { readBy: userId } }
@@ -160,14 +165,24 @@ export class ChatService {
       messageIds
     });
 
-    await this.redis.publish(`messages:events`, JSON.stringify({
-      event: 'messages.seen',
+    await this.redis.publish(`messages:event`, JSON.stringify({
+      type: 'messages.seen',
+      roomId,
+      userId,
+      messageIds,
+    }
+    ));
+
+    return {
+      success: true,
+      statusCode: HttpStatus.CREATED,
+      message: 'messages.seen.successfuly',
       data: {
         roomId,
         userId,
         messageIds,
       }
-    }));
+    }
   }
 
 }

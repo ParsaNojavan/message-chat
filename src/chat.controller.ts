@@ -23,7 +23,7 @@ export class ChatController {
 
   @MessagePattern('message.seen')
   async markAsSeen(
-    @Payload() payload: { roomId: string, userId: string, messageIds: string[] },
+    @Payload() payload: { roomId: string, messageIds: string[] }, @RPCContext() context
   ) {
 
     if (!payload.messageIds?.length) {
@@ -31,7 +31,7 @@ export class ChatController {
     }
 
     return this.chatService
-      .markAsSeen(payload.roomId, payload.userId, payload.messageIds);
+      .markAsSeen(payload.roomId, payload.messageIds, context);
   }
 
 }
