@@ -16,16 +16,17 @@ export default class Message extends Document implements IEntity {
     isRead: boolean;
     @Prop({ type: [{ type: Types.ObjectId }], default: [] })
     readBy: Types.ObjectId[];
-    
+
     @Prop([{
         mediaId: { type: Types.ObjectId, required: true },
         url: { type: String, required: true },
+        thumbnailUrl: { type: String },
         type: { type: String, required: true }
     }])
-    media?: Array<{ mediaId: Types.ObjectId, url: string, type: string }>;
+    media?: Array<{ mediaId: Types.ObjectId, url: string,thumbnailUrl?: string, type: string }>;
 }
 
-export type RoomDocument = Message & Document & {
+export type MessageDocument = Message & Document & {
     createdAt: Date;
     updatedAt: Date;
 };

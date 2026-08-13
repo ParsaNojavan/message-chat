@@ -189,6 +189,7 @@ export class ChatGateway implements OnModuleInit, OnGatewayConnection, OnGateway
       roomId: string, message: string, media?: {
         mediaId: string;
         url: string;
+        thumbnailUrl: string;
         type: string;
       }[]
     }) {
