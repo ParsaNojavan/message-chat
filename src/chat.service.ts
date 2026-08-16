@@ -185,4 +185,86 @@ export class ChatService {
     }
   }
 
+  async muteRoom(roomId: string, durationMinutes: number, context: Context): Promise<DataResultDto<any>> {
+
+    let mutedUntil: Date | null = null;
+    if (durationMinutes > 0) {
+      mutedUntil = new Date();
+      mutedUntil.setMinutes(mutedUntil.getMinutes() + durationMinutes);
+    } else if (durationMinutes === -1) {
+      mutedUntil = new Date();
+      mutedUntil.setFullYear(mutedUntil.getFullYear() + 100);
+    } else if (durationMinutes === 0) {
+      mutedUntil = null;
+    }
+
+    const result = await this.memberModel.updateOne({
+      roomId: new Types.ObjectId(roomId),
+      userId: new Types.ObjectId(context.sub)
+    }, {
+      mutedUntil: mutedUntil
+    });
+
+    if (result.matchedCount === 0) {
+      throw new NotFoundException('room.member.notFound');
+    }
+
+    return {
+      success: true,
+      statusCode: HttpStatus.OK,
+      message: 'user.muted.successfuly',
+      data: {
+        roomId: roomId,
+        muted: mutedUntil
+      }
+    }
+  }
+
+  async getUserRooms(context: Context): Promise<DataResultDto<any>> {
+    const userId = context.sub;
+
+    const memberships = await this.memberModel
+      .find({ userId: new Types.ObjectId(userId) })
+      .populate({
+        path: 'roomId',
+        select: 'type name avatar createdAt updatedAt'
+      })
+      .exec();
+
+    const rooms = await Promise.all(memberships.map(async (member) => {
+      const room = member.roomId as any;
+
+      const roomData = {
+        id: room._id,
+        type: room.type,
+        name: room.name,
+        avatar: room.avatar,
+        mutedUntil: member.mutedUntil,
+        role: member.role,
+        joinedAt: member.joinedAt,
+      };
+
+      if (room.type === 'DM') {
+        const otherMember = await this.memberModel.findOne({
+          roomId: room._id,
+          userId: { $ne: new Types.ObjectId(userId) }
+        }).select('userId').exec();
+
+        if (otherMember) {
+          roomData['targetUserId'] = otherMember.userId;
+        }
+      }
+
+      return roomData;
+    }));
+
+    return {
+      success: true,
+      statusCode: HttpStatus.OK,
+      message: 'rooms.fetched.successfuly',
+      data: rooms,
+    };
+
+  }
+
 }
