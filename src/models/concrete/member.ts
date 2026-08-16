@@ -14,6 +14,8 @@ export default class RoomMember extends Document implements IEntity {
     userId: Types.ObjectId
     @Prop({ type: Date, default: Date.now })
     joinedAt: Date;
+    @Prop({ type: Date })
+    mutedUntil?: Date
 }
 
 export type RoomDocument = RoomMember & Document & {

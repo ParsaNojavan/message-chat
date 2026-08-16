@@ -34,4 +34,22 @@ export class ChatController {
       .markAsSeen(payload.roomId, payload.messageIds, context);
   }
 
+  @MessagePattern('room.mute')
+  async muteRoom(
+    @Payload() payload: { roomId: string, durationMinutes: number }, @RPCContext() context
+  ) {
+
+    return this.chatService
+      .muteRoom(payload.roomId, payload.durationMinutes, context);
+  }
+
+  @MessagePattern('rooms.fetch')
+  async fetchRooms(@RPCContext() context) {
+
+    console.log("helloooooooooooooooooooo")
+
+    return this.chatService
+      .getUserRooms(context);
+  }
+
 }
