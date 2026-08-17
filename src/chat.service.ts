@@ -11,6 +11,7 @@ import Redis from 'ioredis';
 import { ClientProxy } from '@nestjs/microservices';
 import { Context } from 'vm';
 import DataResultDto from '@app/contracts/models/dtos/dataResultDto';
+import { ChatType } from '@app/contracts/models/enums/chat-type';
 
 @Injectable()
 export class ChatService {
@@ -266,5 +267,67 @@ export class ChatService {
     };
 
   }
+
+  async isUserBlockedInRoom(roomId: string, senderId: string): Promise<boolean> {
+    const room = await this.roomModel.findById(roomId).select('type members');
+
+    if (!room) {
+      throw new NotFoundException('روم یافت نشد');
+    }
+
+    if (room.type !== 'DM') {
+      return false;
+    }
+
+    const otherMember = await this.memberModel.findOne({
+      roomId: roomId,
+      userId: { $ne: senderId }
+    }).select('userId');
+
+    if (!otherMember) {
+      return false;
+    }
+
+    const redisKey = `user:${otherMember?.userId}:blocks`;
+    const blockedData = await this.redis.get(redisKey);
+
+    let isBlocked = false;
+
+    if (blockedData) {
+      const blockedUsersList = JSON.parse(blockedData);
+      isBlocked = blockedUsersList.includes(senderId.toString());
+    }
+
+    return isBlocked;
+  }
+
+  async getSharedDmRoom(blockerId: string, blockedId: string): Promise<string> {
+    
+    const sharedRooms = await this.memberModel.aggregate([
+      {
+        $match: {
+          userId: { $in: [new Types.ObjectId(blockerId), new Types.ObjectId(blockedId)] }
+        }
+      },
+      {
+        $group: {
+          _id: '$roomId',
+          count: { $sum: 1 }
+        }
+      },
+      {
+        $match: { count: 2 }
+      }
+    ]);
+
+    const sharedRoomIds = sharedRooms.map(room => room._id);
+    const dmRoom = await this.roomModel.findOne({
+      _id: { $in: sharedRoomIds },
+      type: ChatType.DM
+    });
+
+    return dmRoom!._id.toString()
+  }
+
 
 }

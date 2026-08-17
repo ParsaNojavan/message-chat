@@ -32,6 +32,7 @@ export class ChatGateway implements OnModuleInit, OnGatewayConnection, OnGateway
     await this.redis.subscribe('presence:events');
     await this.redis.subscribe('notifications:event');
     await this.redis.subscribe('messages:event');
+    await this.redis.psubscribe('user:*:blocks');
 
     this.redis.on('message', (channel, message) => {
       console.log(channel)
@@ -64,6 +65,27 @@ export class ChatGateway implements OnModuleInit, OnGatewayConnection, OnGateway
         this.server.to(payload.roomId).emit('seen_messages', payload);
       }
     });
+    this.redis.on('pmessage', async (pattern, channel, message) => {
+      if (pattern === 'user:*:blocks') {
+        const payload = JSON.parse(message);
+
+        const blockerId = payload.userId
+        const blockedId = payload.blockedId
+
+        const sockets = this.server.sockets.sockets;
+        const dmRoomId = await this.chatService.getSharedDmRoom(blockerId, blockedId);
+
+        for (const [socketId, socket] of sockets.entries()) {
+          if (socket.data?.user?.sub === blockedId) {
+            socket.leave(dmRoomId);
+
+            socket.emit('room.kicked', { roomId: dmRoomId, reason: 'blocked' });
+
+            console.log(`User ${blockedId} forced to leave room ${dmRoomId} due to block.`);
+          }
+        }
+      }
+    })
   }
 
   private readonly logger = new Logger(ChatGateway.name);
@@ -139,6 +161,10 @@ export class ChatGateway implements OnModuleInit, OnGatewayConnection, OnGateway
     @ConnectedSocket() client: AuthenticatedSocket,
     @MessageBody() body: { roomId: string },
   ): Promise<WsResponse<any>> {
+    const isBlocked = await this.chatService.isUserBlockedInRoom(body.roomId, client.data.user.sub);
+    if (isBlocked) {
+      return { event: 'error', data: { message: 'You are blocked.' } };
+    }
 
     await this.chatService.joinRoom(body.roomId, client.data.user.sub);
     await client.join(body.roomId);
@@ -159,6 +185,11 @@ export class ChatGateway implements OnModuleInit, OnGatewayConnection, OnGateway
     @ConnectedSocket() client: AuthenticatedSocket,
     @MessageBody() body: { roomId: string, isTyping: boolean },
   ) {
+    const isBlocked = await this.chatService.isUserBlockedInRoom(body.roomId, client.data.user.sub);
+    if (isBlocked) {
+      return { event: 'error', data: { message: 'You are blocked.' } };
+    }
+
     client.to(body.roomId).emit('room.typing.event', {
       roomId: body.roomId,
       userId: client.data.user.sub,
@@ -193,6 +224,12 @@ export class ChatGateway implements OnModuleInit, OnGatewayConnection, OnGateway
         type: string;
       }[]
     }) {
+
+    const isBlocked = await this.chatService.isUserBlockedInRoom(body.roomId, client.data.user.sub);
+    if (isBlocked) {
+      return { event: 'error', data: { message: 'You are blocked.' } };
+    }
+
     const payload = {
       sender: client.data.user.sub,
       text: body.message,

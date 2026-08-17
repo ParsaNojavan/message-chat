@@ -46,8 +46,6 @@ export class ChatController {
   @MessagePattern('rooms.fetch')
   async fetchRooms(@RPCContext() context) {
 
-    console.log("helloooooooooooooooooooo")
-
     return this.chatService
       .getUserRooms(context);
   }
