@@ -332,18 +332,34 @@ export class ChatService {
 
   async channelPermission(roomId: string, userId: string) {
 
-    const room = await this.roomModel.findById(roomId).select('type');
-    if (room?.type !== ChatType.CHANNEL) {
-      return true;
+    let roomType = await this.redis.get(`room:${roomId}:type`);
+
+    if (!roomType) {
+      const room = await this.roomModel.findById(roomId).select('type');
+      if (!room) throw new NotFoundException('Room not found');
+
+      roomType = room.type;
+      await this.redis.set(`room:${roomId}:type`, roomType)
     }
+
+
+    if (roomType !== ChatType.CHANNEL) return true;
+
+    const isAdmin = await this.redis.sismember(`channel:${roomId}:admins`, userId);
+
+    if (isAdmin === 1) return true;
 
     const member = await this.memberModel.findOne({
       roomId: new Types.ObjectId(roomId),
       userId: new Types.ObjectId(userId)
     }).select('role')
 
-    return (member?.role === RoleType.ADMIN
-      || member?.role === RoleType.OWNER)
+    if (member && (member.role === RoleType.ADMIN || member.role === RoleType.OWNER)) {
+      await this.redis.sadd(`channel:${roomId}:admins`, userId);
+      return true;
+    }
+
+    return false;
   }
 
 }
