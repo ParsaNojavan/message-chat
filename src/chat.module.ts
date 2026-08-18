@@ -17,6 +17,7 @@ import { DirectModule } from './direct/direct.module';
 import { RtcModule } from './rtc/rtc.module';
 import Redis from 'ioredis';
 import { ClientsModule, Transport } from '@nestjs/microservices';
+import { ChannelModule } from './channel/channel.module';
 
 @Module({
   imports: [
@@ -60,6 +61,7 @@ import { ClientsModule, Transport } from '@nestjs/microservices';
     GroupModule,
     DirectModule,
     RtcModule,
+    ChannelModule,
   ],
   controllers: [ChatController],
   providers: [ChatGateway, WsJwtGuard, ChatService,
