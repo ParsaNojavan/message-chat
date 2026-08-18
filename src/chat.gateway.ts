@@ -166,7 +166,6 @@ export class ChatGateway implements OnModuleInit, OnGatewayConnection, OnGateway
       return { event: 'error', data: { message: 'You are blocked.' } };
     }
 
-    await this.chatService.joinRoom(body.roomId, client.data.user.sub);
     await client.join(body.roomId);
 
     return {

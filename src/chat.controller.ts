@@ -50,4 +50,9 @@ export class ChatController {
       .getUserRooms(context);
   }
 
+  @MessagePattern('room.join')
+  async joinRoom(roomId: string, @RPCContext() context) {
+    await this.chatService.joinRoom(roomId, context.sub);
+  }
+
 }
