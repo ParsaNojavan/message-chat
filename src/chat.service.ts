@@ -12,6 +12,7 @@ import { ClientProxy } from '@nestjs/microservices';
 import { Context } from 'vm';
 import DataResultDto from '@app/contracts/models/dtos/dataResultDto';
 import { ChatType } from '@app/contracts/models/enums/chat-type';
+import { HttpContext } from '@app/contracts/utils/crossCuttingConcerns/decorators/http-context.decorator';
 
 @Injectable()
 export class ChatService {
@@ -302,7 +303,7 @@ export class ChatService {
   }
 
   async getSharedDmRoom(blockerId: string, blockedId: string): Promise<string> {
-    
+
     const sharedRooms = await this.memberModel.aggregate([
       {
         $match: {
@@ -329,5 +330,20 @@ export class ChatService {
     return dmRoom!._id.toString()
   }
 
+  async channelPermission(roomId: string, userId: string) {
+
+    const room = await this.roomModel.findById(roomId).select('type');
+    if (room?.type !== ChatType.CHANNEL) {
+      return true;
+    }
+
+    const member = await this.memberModel.findOne({
+      roomId: new Types.ObjectId(roomId),
+      userId: new Types.ObjectId(userId)
+    }).select('role')
+
+    return (member?.role === RoleType.ADMIN
+      || member?.role === RoleType.OWNER)
+  }
 
 }
