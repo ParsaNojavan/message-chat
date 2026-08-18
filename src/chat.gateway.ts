@@ -190,6 +190,11 @@ export class ChatGateway implements OnModuleInit, OnGatewayConnection, OnGateway
       return { event: 'error', data: { message: 'You are blocked.' } };
     }
 
+    const permission = await this.chatService.channelPermission(body.roomId, client.data.user.sub)
+    if (!permission) {
+      return { event: 'error', data: { message: 'You dont have permission.' } };
+    }
+
     client.to(body.roomId).emit('room.typing.event', {
       roomId: body.roomId,
       userId: client.data.user.sub,
@@ -229,6 +234,12 @@ export class ChatGateway implements OnModuleInit, OnGatewayConnection, OnGateway
     if (isBlocked) {
       return { event: 'error', data: { message: 'You are blocked.' } };
     }
+
+    const permission = await this.chatService.channelPermission(body.roomId, client.data.user.sub)
+    if (!permission) {
+      return { event: 'error', data: { message: 'You dont have permission.' } };
+    }
+
 
     const payload = {
       sender: client.data.user.sub,
