@@ -226,7 +226,11 @@ export class ChatGateway implements OnModuleInit, OnGatewayConnection, OnGateway
         url: string;
         thumbnailUrl: string;
         type: string;
-      }[]
+      }[],
+      replyTo?: string,
+      isForwarded?: boolean,
+      forwardedFromUser?: string,
+      forwardedFromRoom?: string
     }) {
 
     const isBlocked = await this.chatService.isUserBlockedInRoom(body.roomId, client.data.user.sub);
@@ -239,17 +243,13 @@ export class ChatGateway implements OnModuleInit, OnGatewayConnection, OnGateway
       return { event: 'error', data: { message: 'You dont have permission.' } };
     }
 
-
-    const payload = {
-      sender: client.data.user.sub,
-      text: body.message,
-      createdAt: new Date(),
-      media: body.media
-    };
-
-    this.chatService.createMessage(body.roomId, {
-      senderId: payload.sender,
+    const payload = await this.chatService.createMessage(body.roomId, {
+      senderId: client.data.user.sub,
       content: body.message,
+      replyTo: body.replyTo,
+      isForwarded: body.isForwarded,
+      forwardedFromUser: body.forwardedFromUser,
+      forwardedFromRoom: body.forwardedFromRoom
     }, body.media);
 
     this.server.to(body.roomId).emit('room.message.new', payload);
