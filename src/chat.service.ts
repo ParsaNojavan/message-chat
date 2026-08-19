@@ -12,7 +12,6 @@ import { ClientProxy } from '@nestjs/microservices';
 import { Context } from 'vm';
 import DataResultDto from '@app/contracts/models/dtos/dataResultDto';
 import { ChatType } from '@app/contracts/models/enums/chat-type';
-import { HttpContext } from '@app/contracts/utils/crossCuttingConcerns/decorators/http-context.decorator';
 
 @Injectable()
 export class ChatService {
@@ -84,8 +83,19 @@ export class ChatService {
       roomId: roomId,
       senderId: messageDto.senderId,
       content: messageDto.content,
-      media: media
+      media: media,
+      replyTo: messageDto.replyTo,
+      isForwarded: messageDto.isForwarded,
+      forwardedFromUser: messageDto.forwardedFromUser,
+      forwardedFromRoom: messageDto.forwardedFromRoom
     })
+
+    if (message.replyTo) {
+      await message.populate({
+        path: 'replyTo',
+        select: 'content senderId media isForwarded'
+      });
+    }
 
     const members = await this.memberModel
       .find({

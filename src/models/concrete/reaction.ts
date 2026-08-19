@@ -1,5 +1,4 @@
 import { Document, Types } from "mongoose";
-import IEntity from "@app/contracts/models/abstract/iEntity";
 import { Prop, Schema, SchemaFactory } from "@nestjs/mongoose";
 
 @Schema({ _id: false })

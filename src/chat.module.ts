@@ -18,6 +18,7 @@ import { RtcModule } from './rtc/rtc.module';
 import Redis from 'ioredis';
 import { ClientsModule, Transport } from '@nestjs/microservices';
 import { ChannelModule } from './channel/channel.module';
+import Reaction, { ReactionSchema } from './models/concrete/reaction';
 
 @Module({
   imports: [
@@ -57,6 +58,7 @@ import { ChannelModule } from './channel/channel.module';
       { name: Room.name, schema: RoomSchema },
       { name: RoomMember.name, schema: RoomMemberSchema },
       { name: Message.name, schema: MessageSchema },
+      { name: Reaction.name, schema: ReactionSchema}
     ]),
     GroupModule,
     DirectModule,
