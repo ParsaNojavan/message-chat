@@ -12,6 +12,7 @@ import { ClientProxy } from '@nestjs/microservices';
 import { Context } from 'vm';
 import DataResultDto from '@app/contracts/models/dtos/dataResultDto';
 import { ChatType } from '@app/contracts/models/enums/chat-type';
+import ReactionDto from '@app/contracts/models/dtos/chat/reaction.dto';
 
 @Injectable()
 export class ChatService {
@@ -370,6 +371,38 @@ export class ChatService {
     }
 
     return false;
+  }
+
+  async toggleReaction(userId: string, reaction: ReactionDto) {
+    const message = await this.messageModel.findById(reaction.messageId);
+    if (!message) throw new NotFoundException('message.not-found')
+
+    const existingReactionIndex = message.reactions.findIndex(
+      (r) => r.userId.toString() === userId.toString(),
+    );
+
+    if (existingReactionIndex > -1) {
+      const existingEmoji = message.reactions[existingReactionIndex].emoji;
+
+      if (existingEmoji === reaction.emoji) {
+        message.reactions.splice(existingReactionIndex, 1);
+      } else {
+        message.reactions[existingReactionIndex].emoji = reaction.emoji;
+      }
+    } else {
+      message.reactions.push({
+        userId: new Types.ObjectId(userId),
+        emoji: reaction.emoji,
+      });
+    }
+
+    await message.save();
+
+    return {
+      roomId: message.roomId.toString(),
+      messageId: message._id,
+      reactions: message.reactions,
+    };
   }
 
 }

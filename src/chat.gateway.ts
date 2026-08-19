@@ -16,6 +16,7 @@ import { JwtService } from '@nestjs/jwt';
 import { Server } from 'socket.io';
 import { ChatService } from './chat.service';
 import Redis from 'ioredis';
+import ReactionDto from '@app/contracts/models/dtos/chat/reaction.dto';
 
 @WebSocketGateway({
   cors: {
@@ -253,5 +254,18 @@ export class ChatGateway implements OnModuleInit, OnGatewayConnection, OnGateway
     }, body.media);
 
     this.server.to(body.roomId).emit('room.message.new', payload);
+  }
+
+  @UseGuards(WsJwtGuard)
+  @SubscribeMessage('room.message.react')
+  async handleReactMessage(@ConnectedSocket() client: AuthenticatedSocket,
+    @MessageBody() body: { reaction: ReactionDto }) {
+    const userId = client.data.user.sub;
+    const result = await this.chatService.toggleReaction(userId, body.reaction);
+
+    this.server.to(result.roomId).emit('room.message.reaction.updated', {
+      messageId: body.reaction.messageId,
+      reactions: result.reactions,
+    });
   }
 }
