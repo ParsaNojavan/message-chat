@@ -3,6 +3,7 @@ import IEntity from "@app/contracts/models/abstract/iEntity"
 import { Prop, Schema, SchemaFactory } from "@nestjs/mongoose"
 import * as bcrypt from 'bcrypt'
 import { RoleType } from "@app/contracts/models/enums/role-type"
+import Reaction, { ReactionSchema } from "./reaction"
 
 @Schema({ timestamps: true })
 export default class Message extends Document implements IEntity {
@@ -23,7 +24,22 @@ export default class Message extends Document implements IEntity {
         thumbnailUrl: { type: String },
         type: { type: String, required: true }
     }])
-    media?: Array<{ mediaId: Types.ObjectId, url: string,thumbnailUrl?: string, type: string }>;
+    media?: Array<{ mediaId: Types.ObjectId, url: string, thumbnailUrl?: string, type: string }>;
+
+    @Prop({ type: Types.ObjectId, ref: 'Message', required: false })
+    replyTo?: Types.ObjectId;
+    @Prop({ default: false })
+    isForwarded: boolean;
+    @Prop({ type: Types.ObjectId, required: false })
+    forwardedFromUser?: Types.ObjectId;
+    @Prop({ type: Types.ObjectId, ref: 'Room', required: false })
+    forwardedFromRoom?: Types.ObjectId;
+    @Prop({ type: [ReactionSchema], default: [] })
+    reactions: Reaction[];
+    @Prop({ default: false })
+    isEdited: boolean;
+
+
 }
 
 export type MessageDocument = Message & Document & {
