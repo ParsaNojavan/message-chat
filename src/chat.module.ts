@@ -19,6 +19,7 @@ import Redis from 'ioredis';
 import { ClientsModule, Transport } from '@nestjs/microservices';
 import { ChannelModule } from './channel/channel.module';
 import Reaction, { ReactionSchema } from './models/concrete/reaction';
+import { GroupRtcModule } from './group-rtc/group-rtc.module';
 
 @Module({
   imports: [
@@ -64,6 +65,7 @@ import Reaction, { ReactionSchema } from './models/concrete/reaction';
     DirectModule,
     RtcModule,
     ChannelModule,
+    GroupRtcModule,
   ],
   controllers: [ChatController],
   providers: [ChatGateway, WsJwtGuard, ChatService,
