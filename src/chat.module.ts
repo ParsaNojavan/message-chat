@@ -14,7 +14,6 @@ import { GroupController } from './group/group.controller';
 import { GroupService } from './group/group.service';
 import { GroupModule } from './group/group.module';
 import { DirectModule } from './direct/direct.module';
-import { RtcModule } from './rtc/rtc.module';
 import Redis from 'ioredis';
 import { ClientsModule, Transport } from '@nestjs/microservices';
 import { ChannelModule } from './channel/channel.module';
@@ -63,7 +62,6 @@ import { GroupRtcModule } from './group-rtc/group-rtc.module';
     ]),
     GroupModule,
     DirectModule,
-    RtcModule,
     ChannelModule,
     GroupRtcModule,
   ],
