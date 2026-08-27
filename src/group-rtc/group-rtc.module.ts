@@ -7,6 +7,8 @@ import RoomMember, { RoomMemberSchema } from 'src/models/concrete/member';
 import Message, { MessageSchema } from 'src/models/concrete/message';
 import Reaction, { ReactionSchema } from 'src/models/concrete/reaction';
 import { RoomSchema } from 'src/models/concrete/room';
+import Redis from 'ioredis';
+import { ConfigService } from '@nestjs/config';
 
 @Module({
   imports: [
@@ -18,6 +20,19 @@ import { RoomSchema } from 'src/models/concrete/room';
     ]),
   ],
   controllers: [GroupRtcController],
-  providers: [GroupRtcService]
+  providers: [GroupRtcService,
+    {
+      provide: 'REDIS_CLIENT',
+      useFactory: (configService: ConfigService) => {
+        return new Redis({
+          host: configService.get<string>('REDIS_HOST', 'localhost'),
+          port: configService.get<number>('REDIS_PORT', 6379),
+          username: configService.get<string>('REDIS_USERNAME'),
+          password: configService.get<string>('REDIS_PASSWORD'),
+        });
+      },
+      inject: [ConfigService]
+    },
+  ]
 })
 export class GroupRtcModule { }

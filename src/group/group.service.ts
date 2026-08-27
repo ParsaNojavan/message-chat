@@ -33,6 +33,9 @@ export class GroupService {
 
     async addMember(roomId: string, memberId: string):
         Promise<RoomMember> {
+
+            console.log(roomId,memberId)
+
         const member = await this.memberModel.create({
             userId: memberId,
             roomId: roomId,

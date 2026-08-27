@@ -65,6 +65,20 @@ export class ChatGateway implements OnModuleInit, OnGatewayConnection, OnGateway
 
         this.server.to(payload.roomId).emit('seen_messages', payload);
       }
+      else if (channel === 'rtc:channel') {
+        const payload = JSON.parse(message);
+
+        if (payload.event === 'incoming_call') {
+
+          payload.targetUserIds.forEach(userId => {
+            this.server.to(userId).emit('call.incoming', payload);
+          });
+        }
+        else if (payload.event === 'user_joining_call') {
+          this.server.to(payload.roomId).emit('call.user_joined', payload);
+        }
+      }
+
     });
     this.redis.on('pmessage', async (pattern, channel, message) => {
       if (pattern === 'user:*:blocks') {

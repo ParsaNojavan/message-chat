@@ -15,6 +15,8 @@ export class GroupController {
 
     @MessagePattern('group.add')
     async add(@Payload() data: { roomId, memberId },@RPCContext() context) {
+        console.log(data)
+        return await this.groupService.addMember(data.roomId, data.memberId)
     }
 
     @MessagePattern('group.remove')
