@@ -1,12 +1,16 @@
 import Context from '@app/contracts/models/dtos/rpcContext';
 import { ChatType } from '@app/contracts/models/enums/chat-type';
+import { MessageType } from '@app/contracts/models/enums/message-type';
 import { RoleType } from '@app/contracts/models/enums/role-type';
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { ClientProxy } from '@nestjs/microservices';
 import { InjectModel } from '@nestjs/mongoose';
 import Redis from 'ioredis';
 import { AccessToken } from 'livekit-server-sdk';
 import { Model, Types } from 'mongoose';
+import { ChatService } from 'src/chat.service';
 import RoomMember from 'src/models/concrete/member';
+import Message from 'src/models/concrete/message';
 import Room from 'src/models/concrete/room';
 
 @Injectable()
@@ -17,6 +21,8 @@ export class GroupRtcService {
 
     constructor(@InjectModel(RoomMember.name) private memberModel: Model<RoomMember>,
         @InjectModel(Room.name) private roomModel: Model<Room>,
+        @InjectModel(Message.name) private messageModel: Model<Message>,
+        @Inject('notification-client') private notificationClient: ClientProxy,
         @Inject('REDIS_CLIENT') private readonly redis: Redis,) { }
 
     async createToken(roomId: string, userId: string) {
@@ -68,6 +74,18 @@ export class GroupRtcService {
                 targetUserIds: targetUserIds,
                 timestamp: Date.now()
             }));
+
+            const contentString = 'new incoming call';
+            this.notificationClient.emit(
+                'notifications:event',
+                JSON.stringify({
+                    type: 'notification.send',
+                    senderId: userId,
+                    recipientIds: targetUserIds,
+                    messagePreview: contentString,
+                    roomId: roomId,
+                })
+            );
         }
 
         const isAdmin = roomMember.role === RoleType.ADMIN;
@@ -139,6 +157,28 @@ export class GroupRtcService {
                 timestamp: Date.now()
             }));
 
+            const declinedMessage = await this.messageModel.create({
+                roomId: roomId,
+                type: MessageType.CALL_DECLINED,
+                senderId: userId,
+            });
+
+            const contentString = 'call declined';
+            this.notificationClient.emit(
+                'notifications:event',
+                JSON.stringify({
+                    type: 'notification.send',
+                    senderId: userId,
+                    recipientIds: targetUserIds,
+                    messageId: declinedMessage._id.toString(),
+                    messagePreview:
+                        contentString.length > 50
+                            ? `${contentString.substring(0, 50)}...`
+                            : contentString,
+                    roomId: roomId,
+                })
+            );
+
             return { callEnded: true };
         }
     }
@@ -173,6 +213,25 @@ export class GroupRtcService {
                 targetUserIds: targetUserIds,
                 timestamp: Date.now()
             }));
+
+            const endedMessage = await this.messageModel.create({
+                roomId: roomId,
+                type: MessageType.CALL_ENDED,
+                senderId: userId,
+            });
+
+            const contentString = 'call ended';
+            this.notificationClient.emit(
+                'notifications:event',
+                JSON.stringify({
+                    type: 'notification.send',
+                    senderId: userId,
+                    recipientIds: targetUserIds,
+                    messageId: endedMessage._id.toString(),
+                    messagePreview: contentString,
+                    roomId: roomId,
+                })
+            );
 
             return { callEnded: true };
 

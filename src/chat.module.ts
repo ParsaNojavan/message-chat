@@ -19,6 +19,7 @@ import { ClientsModule, Transport } from '@nestjs/microservices';
 import { ChannelModule } from './channel/channel.module';
 import Reaction, { ReactionSchema } from './models/concrete/reaction';
 import { GroupRtcModule } from './group-rtc/group-rtc.module';
+import { Call, CallSchema } from './models/concrete/call';
 
 @Module({
   imports: [
@@ -58,7 +59,8 @@ import { GroupRtcModule } from './group-rtc/group-rtc.module';
       { name: Room.name, schema: RoomSchema },
       { name: RoomMember.name, schema: RoomMemberSchema },
       { name: Message.name, schema: MessageSchema },
-      { name: Reaction.name, schema: ReactionSchema}
+      { name: Reaction.name, schema: ReactionSchema},
+      { name: Call.name, schema: CallSchema}
     ]),
     GroupModule,
     DirectModule,
