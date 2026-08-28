@@ -33,6 +33,7 @@ import { ConfigService } from '@nestjs/config';
       },
       inject: [ConfigService]
     },
-  ]
+  ],
+  exports: [GroupRtcService]
 })
 export class GroupRtcModule { }

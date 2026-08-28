@@ -15,8 +15,9 @@ import type { AuthenticatedSocket } from '@app/contracts/utils/jwt_token/authent
 import { JwtService } from '@nestjs/jwt';
 import { Server } from 'socket.io';
 import { ChatService } from './chat.service';
-import Redis from 'ioredis';
+import redis from 'ioredis';
 import ReactionDto from '@app/contracts/models/dtos/chat/reaction.dto';
+import { GroupRtcService } from './group-rtc/group-rtc.service';
 
 @WebSocketGateway({
   cors: {
@@ -26,16 +27,18 @@ import ReactionDto from '@app/contracts/models/dtos/chat/reaction.dto';
 export class ChatGateway implements OnModuleInit, OnGatewayConnection, OnGatewayDisconnect {
 
   constructor(private readonly chatService: ChatService,
+    private readonly groupRtcService: GroupRtcService,
     private readonly jwtService: JwtService,
-    @Inject('REDIS_SUB_CLIENT') private readonly redis: Redis,) { }
+    @Inject('REDIS_CLIENT') private readonly redis: redis,
+    @Inject('REDIS_SUB_CLIENT') private readonly redisSub: redis,) { }
 
   async onModuleInit() {
-    await this.redis.subscribe('presence:events');
-    await this.redis.subscribe('notifications:event');
-    await this.redis.subscribe('messages:event');
-    await this.redis.psubscribe('user:*:blocks');
+    await this.redisSub.subscribe('presence:events');
+    await this.redisSub.subscribe('notifications:event');
+    await this.redisSub.subscribe('messages:event');
+    await this.redisSub.psubscribe('user:*:blocks');
 
-    this.redis.on('message', (channel, message) => {
+    this.redisSub.on('message', (channel, message) => {
       console.log(channel)
       if (channel === 'presence:events') {
 
@@ -68,19 +71,41 @@ export class ChatGateway implements OnModuleInit, OnGatewayConnection, OnGateway
       else if (channel === 'rtc:channel') {
         const payload = JSON.parse(message);
 
-        if (payload.event === 'incoming_call') {
+        switch (payload.event) {
+          case 'incoming_call':
+            payload.targetUserIds.forEach(userId => {
+              this.server.to(userId).emit('call.incoming', payload);
+            });
+            break;
 
-          payload.targetUserIds.forEach(userId => {
-            this.server.to(userId).emit('call.incoming', payload);
-          });
-        }
-        else if (payload.event === 'user_joining_call') {
-          this.server.to(payload.roomId).emit('call.user_joined', payload);
+          case 'user_joining_call':
+            this.server.to(payload.roomId).emit('call.user_joined', payload);
+            break;
+
+          case 'user_accepted':
+            this.server.to(payload.roomId).emit('call.user_accepted', payload);
+            break;
+
+          case 'user_declined':
+            this.server.to(payload.roomId).emit('call.user_declined', payload);
+            break;
+
+          case 'call_declined':
+            this.server.to(payload.roomId).emit('call.declined', payload);
+            break;
+
+          case 'user_left_call':
+            this.server.to(payload.roomId).emit('call.user_left', payload);
+            break;
+
+          case 'call_ended':
+            this.server.to(payload.roomId).emit('call.ended', payload);
+            break;
         }
       }
 
     });
-    this.redis.on('pmessage', async (pattern, channel, message) => {
+    this.redisSub.on('pmessage', async (pattern, channel, message) => {
       if (pattern === 'user:*:blocks') {
         const payload = JSON.parse(message);
 
@@ -281,5 +306,71 @@ export class ChatGateway implements OnModuleInit, OnGatewayConnection, OnGateway
       messageId: body.reaction.messageId,
       reactions: result.reactions,
     });
+  }
+
+  @UseGuards(WsJwtGuard)
+  @SubscribeMessage('call.accept')
+  async handleAcceptCall(@ConnectedSocket() client: AuthenticatedSocket,
+    @MessageBody() body: { roomId: string }) {
+    const userId = client.data.user.sub;
+
+    try {
+
+      const isBlocked = await this.chatService.isUserBlockedInRoom(body.roomId, userId);
+      if (isBlocked) throw new Error('You are blocked.');
+
+      const result = await this.groupRtcService.createToken(body.roomId, userId)
+
+      this.redis.publish('rtc:channel', JSON.stringify({
+        event: 'user_accepted',
+        roomId: body.roomId,
+        userId: userId
+      }));
+
+      return {
+        status: 'success',
+        token: result.rpcToken,
+        url: process.env.LIVEKIT_WS_URL
+      };
+
+    } catch (error: any) {
+      this.logger.error(`Accept Call Error: ${error.message}`, error.stack);
+      return {
+        status: 'error',
+        message: error.message
+      };
+    }
+  }
+
+  @UseGuards(WsJwtGuard)
+  @SubscribeMessage('call.decline')
+  async handleDeclineCall(@ConnectedSocket() client: AuthenticatedSocket,
+    @MessageBody() body: { roomId: string }) {
+    const userId = client.data.user.sub;
+
+    try {
+      await this.groupRtcService.handleDecline(body.roomId, userId);
+      return { status: 'success' };
+
+    } catch (error: any) {
+      this.logger.error(`Decline Call Error: ${error.message}`, error.stack);
+      return { status: 'error', message: error.message };
+    }
+  }
+
+  @UseGuards(WsJwtGuard)
+  @SubscribeMessage('call.leave')
+  async handleLeaveCall(@ConnectedSocket() client: AuthenticatedSocket,
+    @MessageBody() body: { roomId: string }) {
+    const userId = client.data.user.sub;
+
+    try {
+      await this.groupRtcService.leaveCall(body.roomId, userId);
+      return { status: 'success' };
+
+    } catch (error: any) {
+      this.logger.error(`Decline Call Error: ${error.message}`, error.stack);
+      return { status: 'error', message: error.message };
+    }
   }
 }

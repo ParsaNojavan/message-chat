@@ -10,6 +10,6 @@ export class GroupRtcController {
 
     @MessagePattern('group-rtc.token')
     async create(@Payload() data: { roomId }, @RPCContext() context) {
-        return await this.groupRtcService.createToken(data.roomId, context)
+        return await this.groupRtcService.createToken(data.roomId, context.sub)
     }
 }
