@@ -4,6 +4,8 @@ import { Prop, Schema, SchemaFactory } from "@nestjs/mongoose"
 import * as bcrypt from 'bcrypt'
 import { RoleType } from "@app/contracts/models/enums/role-type"
 import Reaction, { ReactionSchema } from "./reaction"
+import { MessageType } from "@app/contracts/models/enums/message-type"
+import { Call, CallSchema } from "./call"
 
 @Schema({ timestamps: true })
 export default class Message extends Document implements IEntity {
@@ -17,6 +19,12 @@ export default class Message extends Document implements IEntity {
     isRead: boolean;
     @Prop({ type: [{ type: Types.ObjectId }], default: [] })
     readBy: Types.ObjectId[];
+
+    @Prop({ type: String, enum: Object.values(MessageType), default: MessageType.DEFAULT })
+    type: MessageType;
+
+    @Prop({ type: CallSchema, required: false })
+    callData?: Call;
 
     @Prop([{
         mediaId: { type: Types.ObjectId, required: true },
