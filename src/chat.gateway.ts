@@ -36,6 +36,7 @@ export class ChatGateway implements OnModuleInit, OnGatewayConnection, OnGateway
     await this.redisSub.subscribe('presence:events');
     await this.redisSub.subscribe('notifications:event');
     await this.redisSub.subscribe('messages:event');
+    await this.redisSub.subscribe('rtc:channel');
     await this.redisSub.psubscribe('user:*:blocks');
 
     this.redisSub.on('message', (channel, message) => {
@@ -131,10 +132,12 @@ export class ChatGateway implements OnModuleInit, OnGatewayConnection, OnGateway
   private readonly logger = new Logger(ChatGateway.name);
 
   async handleConnection(client: AuthenticatedSocket) {
-    const token = client.handshake.auth?.token ?? client.handshake.query?.token;
+    const token =
+      client.handshake.auth?.token ??
+      client.handshake.query?.token;
 
-    if (!token) {
-      client.disconnect();
+    if (!token || typeof token !== 'string') {
+      client.disconnect(true);
       return;
     }
 
@@ -143,25 +146,48 @@ export class ChatGateway implements OnModuleInit, OnGatewayConnection, OnGateway
         secret: process.env.JWT_SECRET,
       });
 
-      client.data = {
-        user: payload,
+      const userId = payload.sub?.toString();
+
+      if (!userId) {
+        client.disconnect(true);
+        return;
+      }
+
+      client.data.user = {
+        ...payload,
+        sub: userId,
       };
 
-      await client.join(payload.sub);
-      await this.chatService.setUserOnline(payload.sub);
-    }
-    catch (error) {
-      client.disconnect();
-      return;
-    }
+      await client.join(userId);
+      await this.chatService.setUserOnline(userId);
 
+      this.logger.log(
+        `Socket ${client.id} connected for user ${userId}`,
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Socket authentication failed for ${client.id}`,
+      );
+
+      client.disconnect(true);
+    }
   }
 
   async handleDisconnect(client: AuthenticatedSocket) {
-    await client.leave(client.data.user.sub);
-    this.logger.log(`Client disconnected: ${client.data.user}`);
-    await this.chatService.setUserOffline(client.data.user.sub);
+    const userId = client.data?.user?.sub?.toString();
+
+    if (!userId) {
+      return;
+    }
+
+    await client.leave(userId);
+    await this.chatService.setUserOffline(userId);
+
+    this.logger.log(
+      `Client ${client.id} disconnected for user ${userId}`,
+    );
   }
+
 
   @WebSocketServer()
   server: Server;

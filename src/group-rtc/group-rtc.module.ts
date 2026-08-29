@@ -9,6 +9,7 @@ import Reaction, { ReactionSchema } from 'src/models/concrete/reaction';
 import { RoomSchema } from 'src/models/concrete/room';
 import Redis from 'ioredis';
 import { ConfigService } from '@nestjs/config';
+import { ClientsModule, Transport } from '@nestjs/microservices';
 
 @Module({
   imports: [
@@ -17,6 +18,16 @@ import { ConfigService } from '@nestjs/config';
       { name: RoomMember.name, schema: RoomMemberSchema },
       { name: Message.name, schema: MessageSchema },
       { name: Reaction.name, schema: ReactionSchema }
+    ]),
+    ClientsModule.register([
+      {
+        name: 'notification-client',
+        transport: Transport.REDIS,
+        options: {
+          host: process.env.REDIS_HOST ?? 'localhost',
+          port: parseInt(process.env.REDIS_PORT ?? '6379')
+        }
+      }
     ]),
   ],
   controllers: [GroupRtcController],
