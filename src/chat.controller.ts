@@ -55,4 +55,21 @@ export class ChatController {
     await this.chatService.joinRoom(roomId, context.sub);
   }
 
+  @MessagePattern('room.messages')
+  async getRoomMessages(
+    @Payload() payload: { roomId, messageId, limit },
+    @RPCContext() context
+  ) {
+    const parsedLimit = payload.limit ? Number(payload.limit) : 20;
+
+    console.log("helloooooooo",context)
+
+    return await this.chatService.getRoomMessages(
+      payload.roomId,
+      parsedLimit,
+      context,
+      payload.messageId
+    );
+  }
+
 }

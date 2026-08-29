@@ -1,27 +1,30 @@
-import { HttpStatus, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, HttpStatus, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import Room from './models/concrete/room';
 import { Model, Types } from 'mongoose';
 import Message from './models/concrete/message';
+import type { MessageDocument } from './models/concrete/message';
 import RoomMember from './models/concrete/member';
 import { ChatGateway } from './chat.gateway';
 import { RoleType } from '@app/contracts/models/enums/role-type';
 import MessageDto from '@app/contracts/models/dtos/chat/message.dto';
 import Redis from 'ioredis';
 import { ClientProxy } from '@nestjs/microservices';
-import { Context } from 'vm';
 import DataResultDto from '@app/contracts/models/dtos/dataResultDto';
 import { ChatType } from '@app/contracts/models/enums/chat-type';
 import ReactionDto from '@app/contracts/models/dtos/chat/reaction.dto';
 import { NormalizeObjectId } from '@app/contracts/utils/mongoose/normalizeObjectId';
+import { firstValueFrom } from 'rxjs';
+import Context from '@app/contracts/models/dtos/rpcContext';
 
 @Injectable()
 export class ChatService {
   constructor(@InjectModel(Room.name) private roomModel: Model<Room>,
-    @InjectModel(Message.name) private messageModel: Model<Message>,
+    @InjectModel(Message.name) private messageModel: Model<MessageDocument>,
     @InjectModel(RoomMember.name) private memberModel: Model<RoomMember>,
     @Inject('REDIS_CLIENT') private readonly redis: Redis,
-    @Inject('notification-client') private notificationClient: ClientProxy) { }
+    @Inject('notification-client') private notificationClient: ClientProxy,
+    @Inject('user-client') private userClient: ClientProxy) { }
 
   async isUserMemberOfRoom(roomId: string, userId: string): Promise<boolean> {
     const isMember = await this.memberModel.exists({
@@ -417,4 +420,87 @@ export class ChatService {
     };
   }
 
+  async getRoomMessages(roomId: string, limit: number = 20, context: Context, messageId?: string) {
+
+    const normalizedRoomId = NormalizeObjectId.getObjectIdOrString(roomId);
+    const normalizedUserId = NormalizeObjectId.getObjectIdOrString(context.sub);
+
+    const memberShip = await this.memberModel
+      .findOne({ roomId: normalizedRoomId, userId: normalizedUserId })
+      .lean()
+      .exec();
+
+    if (!memberShip) throw new ForbiddenException('access denied');
+
+
+    let cursorDate: Date | null = null;
+
+    if (messageId) {
+      const targetMessage = await this.messageModel
+        .findOne({
+          _id: NormalizeObjectId.getObjectIdOrString(messageId),
+          roomId: normalizedRoomId
+        })
+        .select('_id createdAt')
+        .exec();
+
+      if (!targetMessage) {
+        throw new NotFoundException('Message not found');
+      }
+
+      cursorDate = targetMessage.createdAt;
+    }
+
+    const query: Record<string, any> = { roomId: NormalizeObjectId.getObjectIdOrString(roomId) };
+    if (cursorDate) {
+      query.createdAt = { $lt: cursorDate };
+    }
+
+    const messages = await this.messageModel
+      .find(query)
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .lean()
+      .exec();
+
+    const sortedMessages = messages.reverse();
+
+    const senderIds = Array.from(
+      new Set(
+        sortedMessages
+          .map((msg) => msg.senderId?.toString())
+          .filter(Boolean)
+      )
+    );
+
+    let userMap = new Map<string, any>();
+
+    if (senderIds.length > 0) {
+      try {
+        const response = await firstValueFrom(
+          this.userClient.send('users.details', { userIds: senderIds })
+        );
+
+        const users: any[] = response?.data || response || [];
+
+        userMap = new Map(
+          users.map((user) => [user._id.toString(), user])
+        );
+      } catch (error) {
+
+        console.error('Failed to fetch user details:', error);
+      }
+    }
+
+    const populatedMessages = sortedMessages.map((msg) => ({
+      ...msg,
+      sender: userMap.get(msg.senderId?.toString()) || null,
+    }));
+
+    return {
+      messages: populatedMessages,
+      hasMore: messages.length === limit,
+      nextCursor: sortedMessages.length > 0 ? populatedMessages[0]._id : null,
+    };
+  }
 }
