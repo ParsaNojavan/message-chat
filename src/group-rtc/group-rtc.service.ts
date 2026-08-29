@@ -344,7 +344,7 @@ export class GroupRtcService {
             .select('roomId')
             .lean();
 
-        const roomIds = userMemberships.map((member) => member.roomId);
+        const roomIds = userMemberships.map((member) => member.roomId?.toString());
 
         if (roomIds.length === 0) {
             return {
