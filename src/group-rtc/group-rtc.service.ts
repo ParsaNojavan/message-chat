@@ -72,6 +72,30 @@ export class GroupRtcService {
         ];
     }
 
+    private async clearCallTimeout(roomId: string): Promise<void> {
+        const pattern = `call_timeout:${roomId.toString()}:*`;
+        let cursor = '0';
+        const keys: string[] = [];
+
+        do {
+            const [nextCursor, scannedKeys] = await this.redis.scan(
+                cursor,
+                'MATCH',
+                pattern,
+                'COUNT',
+                100,
+            );
+            cursor = nextCursor;
+            if (scannedKeys.length > 0) {
+                keys.push(...scannedKeys);
+            }
+        } while (cursor !== '0');
+
+        if (keys.length > 0) {
+            await this.redis.del(...keys);
+        }
+    }
+
     async createToken(roomId: string, userId: string) {
         if (!roomId || !userId) {
             throw new BadRequestException('Room ID and User ID are required');
@@ -104,10 +128,24 @@ export class GroupRtcService {
         const targetUserIds = await this.getOtherMemberIds(nRoomId, nUserId);
 
         const activeRoomKey = `active_room:${nRoomId}`;
-        const isRoomActive = await this.redis.get(activeRoomKey);
+        const participantsKey = `call_participants:${nRoomId}`;
 
-        if (!isRoomActive) {
-            await this.redis.set(activeRoomKey, 'active', 'EX', this.CALL_TTL_SECONDS);
+        // ۱. بررسی و اضافه کردن کاربر به لیست حاضرین
+        const isNewParticipant = await this.redis.sadd(participantsKey, nUserId);
+        await this.redis.expire(participantsKey, this.CALL_TTL_SECONDS);
+
+        // ۲. تلاش برای ایجاد تماس اتمیک
+        const isNewCall = await this.redis.set(
+            activeRoomKey,
+            'active',
+            'EX',
+            this.CALL_TTL_SECONDS,
+            'NX',
+        );
+
+        if (isNewCall === 'OK') {
+            const timeoutKey = `call_timeout:${nRoomId}:${nUserId}`;
+            await this.redis.set(timeoutKey, 'ringing', 'EX', 35);
 
             await this.redis.publish(
                 'rtc:channel',
@@ -129,6 +167,9 @@ export class GroupRtcService {
                 messagePreview: 'new incoming call',
                 roomId: nRoomId,
             });
+        } else if (isNewParticipant === 1) {
+            // تماس از قبل برقرار بوده و شخص دیگری (پاسخ‌دهنده) وارد شده -> تایمر لغو شود
+            await this.clearCallTimeout(nRoomId);
         }
 
         const isAdmin = roomMember.role === RoleType.ADMIN;
@@ -149,10 +190,6 @@ export class GroupRtcService {
             canSubscribe: true,
             roomAdmin: isAdmin,
         });
-
-        const participantsKey = `call_participants:${nRoomId}`;
-        await this.redis.sadd(participantsKey, nUserId);
-        await this.redis.expire(participantsKey, this.CALL_TTL_SECONDS);
 
         await this.redis.set(redisCallKey, nRoomId, 'EX', this.CALL_TTL_SECONDS);
 
@@ -184,6 +221,7 @@ export class GroupRtcService {
         const activeRoomKey = `active_room:${nRoomId}`;
         const redisCallKey = `active_call:${nUserId}`;
 
+        await this.clearCallTimeout(nRoomId);
         await this.redis.del(redisCallKey);
         await this.redis.srem(participantsKey, nUserId);
 
@@ -224,7 +262,6 @@ export class GroupRtcService {
 
             return { callEnded: false };
         } else {
-
             await this.redis.del(activeRoomKey);
             await this.redis.del(participantsKey);
 
@@ -275,6 +312,7 @@ export class GroupRtcService {
         const activeRoomKey = `active_room:${nRoomId}`;
         const redisCallKey = `active_call:${nUserId}`;
 
+        await this.clearCallTimeout(nRoomId);
         await this.redis.del(redisCallKey);
         await this.redis.srem(participantsKey, nUserId);
 
@@ -409,5 +447,56 @@ export class GroupRtcService {
                 calls: formattedCalls,
             },
         };
+    }
+
+    async handleMissedCall(callerId: string, roomId: string) {
+        const nRoomId = roomId.toString();
+        const nCallerId = callerId.toString();
+
+        const lockKey = `lock:missed_call:${nRoomId}:${nCallerId}`;
+        const acquired = await this.redis.set(lockKey, 'locked', 'EX', 10, 'NX');
+        if (!acquired) {
+            return;
+        }
+
+        const activeRoomKey = `active_room:${nRoomId}`;
+        const participantsKey = `call_participants:${nRoomId}`;
+        const redisCallKey = `active_call:${nCallerId}`;
+
+        await this.redis.del(activeRoomKey);
+        await this.redis.del(participantsKey);
+        await this.redis.del(redisCallKey);
+        await this.clearCallTimeout(nRoomId);
+
+        const allMembers = await this.getAllMemberIds(nRoomId);
+        const recipientIds = await this.getOtherMemberIds(nRoomId, nCallerId);
+
+        const missedCallMessage = await this.messageModel.create({
+            roomId: nRoomId,
+            type: MessageType.CALL_MISSED,
+            senderId: nCallerId,
+        });
+
+        await this.redis.publish(
+            'rtc:channel',
+            JSON.stringify({
+                event: 'call_missed',
+                roomId: nRoomId,
+                callerId: nCallerId,
+                targetUserIds: allMembers,
+                message: missedCallMessage,
+                timestamp: Date.now(),
+            }),
+        );
+
+        const contentString = 'Missed Call';
+        this.notificationClient.emit('notification.send', {
+            type: 'notification.send',
+            senderId: nCallerId,
+            recipientIds: recipientIds,
+            messageId: missedCallMessage._id.toString(),
+            messagePreview: contentString,
+            roomId: nRoomId,
+        });
     }
 }
