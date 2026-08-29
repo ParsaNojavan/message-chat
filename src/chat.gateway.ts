@@ -36,6 +36,7 @@ export class ChatGateway implements OnModuleInit, OnGatewayConnection, OnGateway
     await this.redisSub.subscribe('presence:events');
     await this.redisSub.subscribe('notifications:event');
     await this.redisSub.subscribe('messages:event');
+    await this.redisSub.subscribe('rtc:channel');
     await this.redisSub.psubscribe('user:*:blocks');
 
     this.redisSub.on('message', (channel, message) => {

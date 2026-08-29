@@ -22,6 +22,14 @@ export class ChatService {
     @Inject('REDIS_CLIENT') private readonly redis: Redis,
     @Inject('notification-client') private notificationClient: ClientProxy) { }
 
+  getObjectIdOrString(value: string): Array<string | Types.ObjectId> {
+    const values: Array<string | Types.ObjectId> = [value];
+    if (Types.ObjectId.isValid(value)) {
+      values.push(new Types.ObjectId(value));
+    }
+    return values;
+  }
+
   async isUserMemberOfRoom(roomId: string, userId: string): Promise<boolean> {
     const isMember = await this.memberModel.exists({
       roomId: new Types.ObjectId(roomId),
@@ -74,22 +82,28 @@ export class ChatService {
     return members;
   }
 
-  async createMessage(roomId: string, messageDto: MessageDto, media?: {
-    mediaId: string;
-    url: string;
-    type: string;
-  }[]): Promise<Message> {
+
+
+  async createMessage(
+    roomId: string,
+    messageDto: MessageDto,
+    media?: {
+      mediaId: string;
+      url: string;
+      type: string;
+    }[]
+  ): Promise<Message> {
 
     const message = await this.messageModel.create({
       roomId: roomId,
       senderId: messageDto.senderId,
-      content: messageDto.content,
+      content: messageDto.content || '',
       media: media,
       replyTo: messageDto.replyTo,
       isForwarded: messageDto.isForwarded,
       forwardedFromUser: messageDto.forwardedFromUser,
       forwardedFromRoom: messageDto.forwardedFromRoom
-    })
+    });
 
     if (message.replyTo) {
       await message.populate({
@@ -100,24 +114,29 @@ export class ChatService {
 
     const members = await this.memberModel
       .find({
-        roomId: new Types.ObjectId(roomId),
-        userId: { $ne: new Types.ObjectId(messageDto.senderId) },
+        roomId: { $in: this.getObjectIdOrString(roomId) },
+        userId: { $nin: this.getObjectIdOrString(messageDto.senderId) },
       })
       .select('userId')
       .lean();
 
-    const recipientIds = members.map((m) => m.userId.toString());
+    const recipientIds = members
+      .map((m) => m.userId?.toString())
+      .filter(Boolean);
+
+    const previewText = message.content || (media?.length ? 'Sent an attachment' : '');
 
     this.notificationClient.emit('notification.send', {
       senderId: message.senderId.toString(),
       recipientIds: recipientIds,
       messageId: message._id.toString(),
       messagePreview:
-        message.content.length > 50
-          ? `${message.content.substring(0, 50)}...`
-          : message.content,
-      roomId: roomId,
+        previewText.length > 50
+          ? `${previewText.substring(0, 50)}...`
+          : previewText,
+      roomId: roomId.toString(),
     });
+
     return message;
   }
 
