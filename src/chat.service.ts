@@ -503,4 +503,96 @@ export class ChatService {
       nextCursor: sortedMessages.length > 0 ? populatedMessages[0]._id : null,
     };
   }
+
+  async searchRoomMessages(
+    roomId: string,
+    query: string,
+    limit: number = 20,
+    context: Context,
+    messageId?: string
+  ) {
+    const normalizedRoomId = NormalizeObjectId.getObjectIdOrString(roomId);
+    const normalizedUserId = NormalizeObjectId.getObjectIdOrString(context.sub);
+
+    const memberShip = await this.memberModel
+      .findOne({
+        roomId: normalizedRoomId,
+        userId: normalizedUserId,
+      })
+      .lean()
+      .exec();
+
+    if (!memberShip) {
+      throw new ForbiddenException('Access denied to room');
+    }
+
+    const trimmedQuery = query?.trim();
+    if (!trimmedQuery) {
+      
+      return { messages: [], hasMore: false, nextCursor: null };
+    }
+
+    const escapedQuery = trimmedQuery.replace(/[-[\]{}()*+?.,\\^$|#]/g, '\\$&');
+
+    const filter: any = {
+      roomId: { $in: normalizedRoomId },
+      content: { $regex: escapedQuery, $options: 'i' },
+    };
+
+    console.log(filter)
+
+    if (messageId) {
+      const normalizedMessageId = NormalizeObjectId.getObjectIdOrString(messageId);
+      const baseMessage = await this.messageModel
+        .findById(normalizedMessageId)
+        .lean()
+        .exec();
+
+      if (baseMessage) {
+        filter.createdAt = { $lt: baseMessage.createdAt };
+      }
+    }
+
+    const messages = await this.messageModel
+      .find(filter)
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .lean()
+      .exec();
+
+      console.log(messages)
+
+    if (messages.length === 0) {
+      return { messages: [], hasMore: false, nextCursor: null };
+    }
+
+    const senderIds = [...new Set(messages.map((m) => m.senderId?.toString()).filter(Boolean))];
+    let usersMap = new Map();
+
+    if (senderIds.length > 0) {
+      try {
+        const users = await firstValueFrom(
+          this.userClient.send('users.details', { userIds: senderIds }),
+        );
+        if (Array.isArray(users)) {
+          usersMap = new Map(users.map((u: any) => [(u.id || u._id)?.toString(), u]));
+        }
+      } catch {
+        // در صورت بروز خطا در سرویس یوزر، بدون مشخصات یوزر ادامه می‌دهد
+      }
+    }
+
+    const populatedMessages = messages.map((m) => ({
+      ...m,
+      sender: usersMap.get(m.senderId?.toString()) || null,
+    }));
+
+    return {
+      messages: populatedMessages,
+      hasMore: messages.length === limit,
+      nextCursor: messages[messages.length - 1]._id,
+    };
+  }
+
+
 }
