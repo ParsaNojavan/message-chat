@@ -13,6 +13,7 @@ import { Context } from 'vm';
 import DataResultDto from '@app/contracts/models/dtos/dataResultDto';
 import { ChatType } from '@app/contracts/models/enums/chat-type';
 import ReactionDto from '@app/contracts/models/dtos/chat/reaction.dto';
+import { NormalizeObjectId } from '@app/contracts/utils/mongoose/normalizeObjectId';
 
 @Injectable()
 export class ChatService {
@@ -21,14 +22,6 @@ export class ChatService {
     @InjectModel(RoomMember.name) private memberModel: Model<RoomMember>,
     @Inject('REDIS_CLIENT') private readonly redis: Redis,
     @Inject('notification-client') private notificationClient: ClientProxy) { }
-
-  getObjectIdOrString(value: string): Array<string | Types.ObjectId> {
-    const values: Array<string | Types.ObjectId> = [value];
-    if (Types.ObjectId.isValid(value)) {
-      values.push(new Types.ObjectId(value));
-    }
-    return values;
-  }
 
   async isUserMemberOfRoom(roomId: string, userId: string): Promise<boolean> {
     const isMember = await this.memberModel.exists({
@@ -114,8 +107,8 @@ export class ChatService {
 
     const members = await this.memberModel
       .find({
-        roomId: { $in: this.getObjectIdOrString(roomId) },
-        userId: { $nin: this.getObjectIdOrString(messageDto.senderId) },
+        roomId: { $in: NormalizeObjectId.getObjectIdOrString(roomId) },
+        userId: { $nin: NormalizeObjectId.getObjectIdOrString(messageDto.senderId) },
       })
       .select('userId')
       .lean();
