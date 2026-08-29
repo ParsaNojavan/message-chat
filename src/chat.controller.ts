@@ -3,6 +3,7 @@ import { ChatService } from './chat.service';
 import { MessagePattern, Payload } from '@nestjs/microservices';
 import { RPCContext } from '@app/contracts/utils/crossCuttingConcerns/decorators/rpc-context.decorator';
 import { JwtAuthGuard } from '@app/contracts/utils/jwt_token/guards/jwt.guard';
+import { date } from 'joi';
 
 @Controller()
 export class ChatController {
@@ -62,13 +63,29 @@ export class ChatController {
   ) {
     const parsedLimit = payload.limit ? Number(payload.limit) : 20;
 
-    console.log("helloooooooo",context)
+    console.log("helloooooooo", context)
 
     return await this.chatService.getRoomMessages(
       payload.roomId,
       parsedLimit,
       context,
       payload.messageId
+    );
+  }
+
+  @MessagePattern('room.messages.search')
+  async handleSearchRoomMessages(@Payload() payload: { roomId, query, limit, messageId },
+    @RPCContext() context
+  ) {
+
+    console.log(payload)
+
+    return this.chatService.searchRoomMessages(
+      payload.roomId,
+      payload.query,
+      payload.limit ?? 20,
+      context,
+      payload.messageId,
     );
   }
 
