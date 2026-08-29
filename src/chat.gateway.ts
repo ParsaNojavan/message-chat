@@ -38,6 +38,7 @@ export class ChatGateway implements OnModuleInit, OnGatewayConnection, OnGateway
     await this.redisSub.subscribe('messages:event');
     await this.redisSub.subscribe('rtc:channel');
     await this.redisSub.psubscribe('user:*:blocks');
+    await this.redisSub.psubscribe('__keyevent@*__:expired');
 
     this.redisSub.on('message', (channel, message) => {
       console.log(channel)
@@ -102,6 +103,10 @@ export class ChatGateway implements OnModuleInit, OnGatewayConnection, OnGateway
           case 'call_ended':
             this.server.to(payload.roomId).emit('call.ended', payload);
             break;
+
+          case 'call_missed':
+            this.server.to(payload.roomId).emit('call.missed', payload);
+            break;
         }
       }
 
@@ -123,6 +128,20 @@ export class ChatGateway implements OnModuleInit, OnGatewayConnection, OnGateway
             socket.emit('room.kicked', { roomId: dmRoomId, reason: 'blocked' });
 
             console.log(`User ${blockedId} forced to leave room ${dmRoomId} due to block.`);
+          }
+        }
+      }
+
+      if (pattern === '__keyevent@*__:expired') {
+        if (message.startsWith('call_timeout:')) {
+          const parts = message.split(':');
+          if (parts.length === 3) {
+            const [, roomId, callerId] = parts;
+            try {
+              await this.groupRtcService.handleMissedCall(callerId, roomId);
+            } catch (err: any) {
+              this.logger.error(`Error handling missed call for room ${roomId}: ${err.message}`, err.stack);
+            }
           }
         }
       }
