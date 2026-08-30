@@ -8,20 +8,20 @@ export class GroupController {
     constructor(private readonly groupService: GroupService) { }
 
     @MessagePattern('group.create')
-    async create(@Payload() data: { name, avatar },@RPCContext() context) {
+    async create(@Payload() data: { name, avatar }, @RPCContext() context) {
         console.log(data)
         return await this.groupService.createGroup(data.name, data.avatar, context)
     }
 
     @MessagePattern('group.add')
-    async add(@Payload() data: { roomId, memberId },@RPCContext() context) {
+    async add(@Payload() data: { roomId, memberId }, @RPCContext() context) {
         console.log(data)
-        return await this.groupService.addMember(data.roomId, data.memberId)
+        return await this.groupService.addMember(data.roomId, data.memberId, context)
     }
 
     @MessagePattern('group.remove')
-    async remove(@Payload() data: { roomId, memberId },@RPCContext() context) {
-        return await this.groupService.removeMember(data.roomId, data.memberId)
+    async remove(@Payload() data: { roomId, memberId }, @RPCContext() context) {
+        return await this.groupService.removeMember(data.roomId, data.memberId, context)
     }
 
 }

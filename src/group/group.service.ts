@@ -1,7 +1,10 @@
+import DataResultDto from '@app/contracts/models/dtos/dataResultDto';
+import ResultDto from '@app/contracts/models/dtos/resultDto';
 import Context from '@app/contracts/models/dtos/rpcContext';
 import { ChatType } from '@app/contracts/models/enums/chat-type';
 import { RoleType } from '@app/contracts/models/enums/role-type';
-import { Injectable } from '@nestjs/common';
+import { NormalizeObjectId } from '@app/contracts/utils/mongoose/normalizeObjectId';
+import { ForbiddenException, HttpStatus, Injectable } from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { Connection, Model } from 'mongoose';
 import RoomMember from 'src/models/concrete/member';
@@ -13,7 +16,8 @@ export class GroupService {
         @InjectModel(Room.name) private roomModel: Model<Room>,
         @InjectModel(RoomMember.name) private memberModel: Model<RoomMember>) { }
 
-    async createGroup(name: string, avatar: string, context: Context) {
+    async createGroup(name: string, avatar: string, context: Context)
+        : Promise<DataResultDto<any>> {
 
         const room = await this.roomModel.create({
             name: name,
@@ -28,13 +32,28 @@ export class GroupService {
             joinedAt: new Date()
         })
 
-        return { room, owner };
+        return {
+            success: true,
+            statusCode: HttpStatus.CREATED,
+            message: 'channel.created',
+            data: {
+                channel: room,
+                owner: owner
+            }
+        };
     }
 
-    async addMember(roomId: string, memberId: string):
-        Promise<RoomMember> {
+    async addMember(roomId: string, memberId: string, context: Context)
+        : Promise<DataResultDto<any>> {
 
-            console.log(roomId,memberId)
+        const permissionMember = await this.memberModel.findOne({
+            roomId: NormalizeObjectId.getObjectIdOrString(roomId),
+            userId: NormalizeObjectId.getObjectIdOrString(context.sub)
+        })
+
+        if (permissionMember?.role !== RoleType.ADMIN && permissionMember?.role !== RoleType.OWNER) {
+            throw new ForbiddenException('user.add.failed')
+        }
 
         const member = await this.memberModel.create({
             userId: memberId,
@@ -43,14 +62,37 @@ export class GroupService {
             joinedAt: new Date()
         });
 
-        return member;
+        return {
+            success: true,
+            statusCode: HttpStatus.CREATED,
+            message: 'member.created',
+            data: {
+                member: member
+            }
+        };
     }
 
-    async removeMember(roomId: string, memberId: string):
-        Promise<void> {
+    async removeMember(roomId: string, memberId: string, context: Context)
+        : Promise<ResultDto> {
+
+        const permissionMember = await this.memberModel.findOne({
+            roomId: NormalizeObjectId.getObjectIdOrString(roomId),
+            userId: NormalizeObjectId.getObjectIdOrString(context.sub)
+        })
+
+        if (permissionMember?.role !== RoleType.ADMIN && permissionMember?.role !== RoleType.OWNER) {
+            throw new ForbiddenException('user.add.failed')
+        }
+
         await this.memberModel.deleteOne({
             userId: memberId,
             roomId: roomId
         });
+
+        return {
+            success: true,
+            statusCode: HttpStatus.NO_CONTENT,
+            message: 'user.removed'
+        }
     }
 }
