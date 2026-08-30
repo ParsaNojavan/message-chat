@@ -528,7 +528,7 @@ export class ChatService {
 
     const trimmedQuery = query?.trim();
     if (!trimmedQuery) {
-      
+
       return { messages: [], hasMore: false, nextCursor: null };
     }
 
@@ -560,7 +560,7 @@ export class ChatService {
       .lean()
       .exec();
 
-      console.log(messages)
+    console.log(messages)
 
     if (messages.length === 0) {
       return { messages: [], hasMore: false, nextCursor: null };
@@ -578,7 +578,7 @@ export class ChatService {
           usersMap = new Map(users.map((u: any) => [(u.id || u._id)?.toString(), u]));
         }
       } catch {
-        // در صورت بروز خطا در سرویس یوزر، بدون مشخصات یوزر ادامه می‌دهد
+        // continue without user details
       }
     }
 
@@ -594,5 +594,95 @@ export class ChatService {
     };
   }
 
+  async searchUserMessages(userId: string, query: string, limit = 20): Promise<DataResultDto<any>> {
+    if (!query || query.trim() === '') {
+      return {
+        success: true,
+        statusCode: HttpStatus.OK,
+        message: 'messages fetched',
+        data: [],
+      };
+    }
+
+    const memberships = await this.memberModel
+      .find({
+        userId: NormalizeObjectId.getObjectIdOrString(userId),
+      })
+      .select('roomId')
+      .lean();
+
+    const roomIds = memberships.map((m) => m.roomId);
+    if (!roomIds.length) {
+      return {
+        success: true,
+        statusCode: HttpStatus.OK,
+        message: 'messages fetched',
+        data: [],
+      };
+    }
+
+    const expandedRoomIds = roomIds.reduce((acc: any[], id: any) => {
+      acc.push(id);
+      if (id) acc.push(id.toString());
+      return acc;
+    }, []);
+
+    const escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+    const messages = await this.messageModel
+      .find({
+        roomId: { $in: expandedRoomIds },
+        content: { $regex: escapedQuery, $options: 'i' },
+      })
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .lean();
+
+    if (!messages.length) {
+      return {
+        success: true,
+        statusCode: HttpStatus.OK,
+        message: 'messages fetched',
+        data: [],
+      };
+    }
+
+    const senderIds = [...new Set(messages.map((m) => m.senderId?.toString()).filter(Boolean))];
+    const messageRoomIds = [...new Set(messages.map((m) => m.roomId?.toString()).filter(Boolean))];
+
+    const [usersResponse, rooms] = await Promise.all([
+      senderIds.length
+        ? firstValueFrom(this.userClient.send('users.details', senderIds))
+        : [],
+      messageRoomIds.length
+        ? this.roomModel.find({ _id: { $in: messageRoomIds } }).lean()
+        : [],
+    ]);
+
+    const userMap = new Map(
+      usersResponse.data.map((u: any) => [
+        (u._id || u.id)?.toString(),
+        u,
+      ] as [string, any])
+    );
+
+    const roomMap = new Map(
+      (rooms || []).map((r: any) => [
+        r._id.toString(),
+        r,
+      ] as [string, any])
+    );
+
+    return {
+      success: true,
+      statusCode: HttpStatus.OK,
+      message: 'messages fetched successfully',
+      data: messages.map((msg) => ({
+        ...msg,
+        sender: userMap.get(msg.senderId?.toString()) || null,
+        room: roomMap.get(msg.roomId?.toString()) || null,
+      })),
+    };
+  }
 
 }
