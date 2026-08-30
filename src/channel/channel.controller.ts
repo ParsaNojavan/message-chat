@@ -21,6 +21,7 @@ export class ChannelController {
 
     @MessagePattern('channel.remove')
     async remove(@Payload() data: { roomId, memberId }, @RPCContext() context) {
+        console.log(data)
         return await this.channelService.removeMember(data.roomId, data.memberId, context)
     }
 }
