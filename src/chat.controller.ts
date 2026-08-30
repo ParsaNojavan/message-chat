@@ -89,4 +89,18 @@ export class ChatController {
     );
   }
 
+  @MessagePattern('user.messages.search')
+  async handleSearchUserMessages(@Payload() payload: { query, limit },
+    @RPCContext() context
+  ) {
+
+    console.log(payload)
+
+    return this.chatService.searchUserMessages(
+      context.sub,
+      payload.query,
+      payload.limit ?? 20,
+    );
+  }
+
 }
