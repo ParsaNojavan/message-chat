@@ -15,6 +15,7 @@ export class ChannelController {
 
     @MessagePattern('channel.add')
     async add(@Payload() data: { roomId, memberId }, @RPCContext() context) {
+        console.log(data)
         return await this.channelService.addMember(data.roomId, data.memberId, context)
     }
 

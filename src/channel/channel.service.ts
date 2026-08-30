@@ -1,6 +1,7 @@
 import Context from '@app/contracts/models/dtos/rpcContext';
 import { ChatType } from '@app/contracts/models/enums/chat-type';
 import { RoleType } from '@app/contracts/models/enums/role-type';
+import { NormalizeObjectId } from '@app/contracts/utils/mongoose/normalizeObjectId';
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
@@ -33,8 +34,8 @@ export class ChannelService {
         Promise<RoomMember> {
 
         const permissionMember = await this.memberModel.findOne({
-            roomId: new Types.ObjectId(roomId),
-            userId: new Types.ObjectId(context.sub)
+            roomId: NormalizeObjectId.getObjectIdOrString(roomId),
+            userId: NormalizeObjectId.getObjectIdOrString(context.sub)
         })
 
         if (permissionMember?.role !== RoleType.ADMIN && permissionMember?.role !== RoleType.OWNER) {
@@ -55,8 +56,8 @@ export class ChannelService {
         Promise<void> {
 
         const permissionMember = await this.memberModel.findOne({
-            roomId: new Types.ObjectId(roomId),
-            userId: new Types.ObjectId(context.sub)
+            roomId: NormalizeObjectId.getObjectIdOrString(roomId),
+            userId: NormalizeObjectId.getObjectIdOrString(context.sub)
         })
 
         if (permissionMember?.role !== RoleType.ADMIN && permissionMember?.role !== RoleType.OWNER) {
