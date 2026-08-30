@@ -1,8 +1,10 @@
+import DataResultDto from '@app/contracts/models/dtos/dataResultDto';
+import ResultDto from '@app/contracts/models/dtos/resultDto';
 import Context from '@app/contracts/models/dtos/rpcContext';
 import { ChatType } from '@app/contracts/models/enums/chat-type';
 import { RoleType } from '@app/contracts/models/enums/role-type';
 import { NormalizeObjectId } from '@app/contracts/utils/mongoose/normalizeObjectId';
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import { ForbiddenException, HttpStatus, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import RoomMember from 'src/models/concrete/member';
@@ -13,7 +15,8 @@ export class ChannelService {
     constructor(@InjectModel(Room.name) private roomModel: Model<Room>,
         @InjectModel(RoomMember.name) private memberModel: Model<RoomMember>) { }
 
-    async createChannel(name: string, avatar: string, context: Context) {
+    async createChannel(name: string, avatar: string, context: Context)
+        : Promise<DataResultDto<any>> {
         const room = await this.roomModel.create({
             name: name,
             avatar: avatar,
@@ -27,11 +30,19 @@ export class ChannelService {
             joinedAt: new Date()
         })
 
-        return { room, owner };
+        return {
+            success: true,
+            statusCode: HttpStatus.CREATED,
+            message: 'channel.created',
+            data: {
+                channel: room,
+                owner: owner
+            }
+        };
     }
 
-    async addMember(roomId: string, memberId: string, context: Context):
-        Promise<RoomMember> {
+    async addMember(roomId: string, memberId: string, context: Context)
+        : Promise<DataResultDto<any>> {
 
         const permissionMember = await this.memberModel.findOne({
             roomId: NormalizeObjectId.getObjectIdOrString(roomId),
@@ -49,11 +60,18 @@ export class ChannelService {
             joinedAt: new Date()
         });
 
-        return member;
+        return {
+            success: true,
+            statusCode: HttpStatus.CREATED,
+            message: 'member.created',
+            data: {
+                member: member
+            }
+        };
     }
 
-    async removeMember(roomId: string, memberId: string, context: Context):
-        Promise<void> {
+    async removeMember(roomId: string, memberId: string, context: Context)
+        : Promise<ResultDto> {
 
         const permissionMember = await this.memberModel.findOne({
             roomId: NormalizeObjectId.getObjectIdOrString(roomId),
@@ -68,5 +86,11 @@ export class ChannelService {
             userId: memberId,
             roomId: roomId
         });
+
+        return {
+            success: true,
+            statusCode: HttpStatus.NO_CONTENT,
+            message: 'user.removed'
+        }
     }
 }
