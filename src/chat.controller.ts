@@ -103,4 +103,18 @@ export class ChatController {
     );
   }
 
+  @MessagePattern('rooms.search')
+  async handleSearchRooms(@Payload() payload: { query, limit },
+    @RPCContext() context
+  ) {
+
+    console.log(payload)
+
+    return this.chatService.searchRooms(
+      context.sub,
+      payload.query,
+      payload.limit ?? 20,
+    );
+  }
+
 }

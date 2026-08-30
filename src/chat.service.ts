@@ -685,4 +685,121 @@ export class ChatService {
     };
   }
 
+  async searchRooms(
+    userId: string,
+    query: string,
+    limit = 10,
+  ): Promise<DataResultDto<{ myRooms: any[]; globalRooms: any[] }>> {
+    if (!query || query.trim() === '') {
+      return {
+        success: true,
+        statusCode: HttpStatus.OK,
+        message: 'Search query is empty',
+        data: { myRooms: [], globalRooms: [] },
+      };
+    }
+
+    const cleanQuery = query.trim();
+    const escapedQuery = cleanQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regexFilter = { $regex: escapedQuery, $options: 'i' };
+
+    const userMemberships = await this.memberModel
+      .find({ userId: NormalizeObjectId.getObjectIdOrString(userId) })
+      .select('roomId')
+      .lean();
+
+    const myRoomIds = userMemberships.map((m) => m.roomId);
+
+    const expandedMyRoomIds = myRoomIds.reduce((acc: any[], id: any) => {
+      if (id) {
+        acc.push(id);
+        acc.push(id.toString());
+      }
+      return acc;
+    }, []);
+
+    const myNamedRoomsPromise = this.roomModel
+      .find({
+        _id: { $in: expandedMyRoomIds },
+        type: { $in: [ChatType.GROUP, ChatType.CHANNEL] },
+        name: regexFilter,
+      })
+      .limit(limit)
+      .lean();
+
+    const myDMRoomsPromise = (async () => {
+      const dmRooms = await this.roomModel
+        .find({
+          _id: { $in: expandedMyRoomIds },
+          type: ChatType.DM,
+        })
+        .select('_id')
+        .lean();
+
+      if (dmRooms.length === 0) return [];
+
+      const dmRoomIds = dmRooms.map((r) => r._id);
+
+      const otherMembers = await this.memberModel
+        .find({
+          roomId: { $in: dmRoomIds },
+          userId: { $ne: NormalizeObjectId.getObjectIdOrString(userId) },
+        })
+        .select('roomId userId')
+        .lean();
+
+      if (otherMembers.length === 0) return [];
+
+      const otherUserIds = Array.from(new Set(otherMembers.map((m) => m.userId.toString())));
+
+      const usersResponse = await firstValueFrom(this.userClient.send(
+        'users.details',
+        { userIds: otherUserIds, query: cleanQuery }
+      ));
+
+      const matchedUserIds = new Set(
+        (usersResponse || [])
+          .filter((u: any) =>
+            (u.name && u.name.toLowerCase().includes(cleanQuery.toLowerCase())) ||
+            (u.username && u.username.toLowerCase().includes(cleanQuery.toLowerCase()))
+          )
+          .map((u: any) => u._id?.toString() || u.id?.toString())
+      );
+
+      const matchedDmRoomIds = otherMembers
+        .filter((m) => matchedUserIds.has(m.userId.toString()))
+        .map((m) => m.roomId);
+
+      return this.roomModel
+        .find({ _id: { $in: matchedDmRoomIds } })
+        .limit(limit)
+        .lean();
+    })();
+
+    const globalRoomsPromise = this.roomModel
+      .find({
+        _id: { $nin: expandedMyRoomIds },
+        type: { $in: [ChatType.GROUP, ChatType.CHANNEL] },
+      })
+      .limit(limit)
+      .lean();
+
+    const [myNamedRooms, myDMRooms, globalRooms] = await Promise.all([
+      myNamedRoomsPromise,
+      myDMRoomsPromise,
+      globalRoomsPromise,
+    ]);
+
+    const myRooms = [...myNamedRooms, ...myDMRooms].slice(0, limit);
+
+    return {
+      success: true,
+      statusCode: HttpStatus.OK,
+      message: 'Rooms search completed successfully',
+      data: {
+        myRooms,
+        globalRooms,
+      },
+    };
+  }
 }
