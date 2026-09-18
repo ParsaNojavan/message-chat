@@ -14,7 +14,7 @@ import DataResultDto from '@app/contracts/models/dtos/dataResultDto';
 import { ChatType } from '@app/contracts/models/enums/chat-type';
 import ReactionDto from '@app/contracts/models/dtos/chat/reaction.dto';
 import { NormalizeObjectId } from '@app/contracts/utils/mongoose/normalizeObjectId';
-import { firstValueFrom } from 'rxjs';
+import { firstValueFrom, lastValueFrom } from 'rxjs';
 import Context from '@app/contracts/models/dtos/rpcContext';
 
 @Injectable()
@@ -252,17 +252,71 @@ export class ChatService {
     const userId = context.sub;
 
     const memberships = await this.memberModel
-      .find({ userId: new Types.ObjectId(userId) })
+      .find({
+        userId: {
+          $in: NormalizeObjectId.getObjectIdOrString(userId),
+        },
+      })
       .populate({
         path: 'roomId',
-        select: 'type name avatar createdAt updatedAt'
+        select: 'type name avatar createdAt updatedAt',
       })
       .exec();
 
-    const rooms = await Promise.all(memberships.map(async (member) => {
-      const room = member.roomId as any;
+    const dmRoomIds = memberships
+      .filter((m) => (m.roomId as any)?.type === 'DM')
+      .map((m) => (m.roomId as any)._id);
 
-      const roomData = {
+    const dmTargetUserIdMap = new Map<string, string>();
+
+    if (dmRoomIds.length > 0) {
+      const dmOtherMembers = await this.memberModel
+        .find({
+          roomId: { $in: dmRoomIds },
+          userId: { $nin: NormalizeObjectId.getObjectIdOrString(userId) },
+        })
+        .select('roomId userId')
+        .exec();
+
+      dmOtherMembers.forEach((m) => {
+        dmTargetUserIdMap.set(m.roomId.toString(), m.userId.toString());
+      });
+    }
+
+    const uniqueTargetUserIds = Array.from(new Set(dmTargetUserIdMap.values()));
+    const usersDetailMap = new Map<string, any>();
+
+    console.log(uniqueTargetUserIds)
+
+    if (uniqueTargetUserIds.length > 0) {
+      try {
+        const usersResponse = await firstValueFrom(
+          this.userClient.send('users.details', { userIds: uniqueTargetUserIds })
+        );
+
+        console.log(usersResponse)
+
+        const usersList = Array.isArray(usersResponse)
+          ? usersResponse
+          : usersResponse?.data || [];
+
+        usersList.forEach((u: any) => {
+          const id = (u.id || u._id)?.toString();
+          if (id) {
+            usersDetailMap.set(id, u);
+          }
+        });
+      } catch (error) {
+        console.error('Error fetching users from User Microservice:', error);
+      }
+    }
+
+
+    const rooms = memberships.map((member) => {
+      const room = member.roomId as any;
+      if (!room) return null;
+
+      const roomData: any = {
         id: room._id,
         type: room.type,
         name: room.name,
@@ -273,18 +327,24 @@ export class ChatService {
       };
 
       if (room.type === 'DM') {
-        const otherMember = await this.memberModel.findOne({
-          roomId: room._id,
-          userId: { $ne: new Types.ObjectId(userId) }
-        }).select('userId').exec();
+        const targetUserId = dmTargetUserIdMap.get(room._id.toString());
 
-        if (otherMember) {
-          roomData['targetUserId'] = otherMember.userId;
+        if (targetUserId) {
+          roomData.targetUserId = targetUserId;
+
+          const targetUser = usersDetailMap.get(targetUserId);
+          if (targetUser) {
+            roomData.otherUser = targetUser;
+
+            roomData.name = `${targetUser.firstName || ''} ${targetUser.lastName || ''}`.trim();
+            roomData.avatar = targetUser.photoUrl;
+          }
         }
       }
 
       return roomData;
-    }));
+    });
+
 
     return {
       success: true,
