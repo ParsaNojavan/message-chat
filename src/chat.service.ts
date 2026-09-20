@@ -227,11 +227,13 @@ export class ChatService {
     }
 
     const result = await this.memberModel.updateOne({
-      roomId: new Types.ObjectId(roomId),
-      userId: new Types.ObjectId(context.sub)
+      roomId: { $in: NormalizeObjectId.getObjectIdOrString(roomId) },
+      userId: { $in: NormalizeObjectId.getObjectIdOrString(context.sub) }
     }, {
       mutedUntil: mutedUntil
     });
+
+    console.log(result)
 
     if (result.matchedCount === 0) {
       throw new NotFoundException('room.member.notFound');
@@ -250,13 +252,10 @@ export class ChatService {
 
   async getUserRooms(context: Context): Promise<DataResultDto<any>> {
     const userId = context.sub;
+    const userObjectId = NormalizeObjectId.getObjectIdOrString(userId);
 
     const memberships = await this.memberModel
-      .find({
-        userId: {
-          $in: NormalizeObjectId.getObjectIdOrString(userId),
-        },
-      })
+      .find({ userId: { $in: userObjectId } })
       .populate({
         path: 'roomId',
         select: 'type name avatar createdAt updatedAt',
@@ -273,7 +272,7 @@ export class ChatService {
       const dmOtherMembers = await this.memberModel
         .find({
           roomId: { $in: dmRoomIds },
-          userId: { $nin: NormalizeObjectId.getObjectIdOrString(userId) },
+          userId: { $nin: userObjectId },
         })
         .select('roomId userId')
         .exec();
@@ -311,40 +310,40 @@ export class ChatService {
       }
     }
 
+    const rooms = memberships
+      .map((member) => {
+        const room = member.roomId as any;
+        if (!room) return null;
 
-    const rooms = memberships.map((member) => {
-      const room = member.roomId as any;
-      if (!room) return null;
+        const roomData: any = {
+          id: room._id,
+          type: room.type,
+          name: room.name,
+          avatar: room.avatar,
+          mutedUntil: member.mutedUntil || null,
+          role: member.role,
+          joinedAt: member.joinedAt,
+        };
 
-      const roomData: any = {
-        id: room._id,
-        type: room.type,
-        name: room.name,
-        avatar: room.avatar,
-        mutedUntil: member.mutedUntil,
-        role: member.role,
-        joinedAt: member.joinedAt,
-      };
+        if (room.type === 'DM') {
+          const targetUserId = dmTargetUserIdMap.get(room._id.toString());
 
-      if (room.type === 'DM') {
-        const targetUserId = dmTargetUserIdMap.get(room._id.toString());
+          if (targetUserId) {
+            roomData.targetUserId = targetUserId;
+            const targetUser = usersDetailMap.get(targetUserId);
 
-        if (targetUserId) {
-          roomData.targetUserId = targetUserId;
-
-          const targetUser = usersDetailMap.get(targetUserId);
-          if (targetUser) {
-            roomData.otherUser = targetUser;
-
-            roomData.name = `${targetUser.firstName || ''} ${targetUser.lastName || ''}`.trim();
-            roomData.avatar = targetUser.photoUrl;
+            if (targetUser) {
+              roomData.otherUser = targetUser;
+              const fullName = `${targetUser.firstName || ''} ${targetUser.lastName || ''}`.trim();
+              roomData.name = fullName || room.name || 'کاربر';
+              roomData.avatar = targetUser.photoUrl || roomData.avatar;
+            }
           }
         }
-      }
 
-      return roomData;
-    });
-
+        return roomData;
+      })
+      .filter((r) => r !== null);
 
     return {
       success: true,
