@@ -86,26 +86,67 @@ export class ChatService {
     media?: {
       mediaId: string;
       url: string;
+      thumbnailUrl?: string;
       type: string;
     }[]
-  ): Promise<Message> {
+  ): Promise<any> {
 
     const message = await this.messageModel.create({
-      roomId: roomId,
-      senderId: messageDto.senderId,
+      roomId: new Types.ObjectId(roomId),
+      senderId: new Types.ObjectId(messageDto.senderId),
       content: messageDto.content || '',
-      media: media,
-      replyTo: messageDto.replyTo,
-      isForwarded: messageDto.isForwarded,
-      forwardedFromUser: messageDto.forwardedFromUser,
-      forwardedFromRoom: messageDto.forwardedFromRoom
+      media: media?.map((m) => ({
+        ...m,
+        mediaId: new Types.ObjectId(m.mediaId),
+      })),
+      replyTo: messageDto.replyTo ? new Types.ObjectId(messageDto.replyTo) : undefined,
+      isForwarded: messageDto.isForwarded || false,
+      forwardedFromUser: messageDto.forwardedFromUser ? new Types.ObjectId(messageDto.forwardedFromUser) : undefined,
+      forwardedFromRoom: messageDto.forwardedFromRoom ? new Types.ObjectId(messageDto.forwardedFromRoom) : undefined,
     });
 
     if (message.replyTo) {
       await message.populate({
         path: 'replyTo',
-        select: 'content senderId media isForwarded'
+        select: 'content senderId media isForwarded',
       });
+    }
+
+    let payload: any = message.toObject ? message.toObject() : message;
+
+    const userIdsToFetch = new Set<string>();
+
+    if (payload.senderId) {
+      userIdsToFetch.add(payload.senderId.toString());
+    }
+
+    if (payload.replyTo && payload.replyTo.senderId) {
+      userIdsToFetch.add(payload.replyTo.senderId.toString());
+    }
+
+    if (userIdsToFetch.size > 0) {
+      try {
+        const usersResponse = await firstValueFrom(
+          this.userClient.send('users.details', {
+            userIds: Array.from(userIdsToFetch),
+          }),
+        );
+
+        const usersList = Array.isArray(usersResponse) ? usersResponse : (usersResponse?.data || []);
+        const userMap = new Map<string, any>(
+          usersList.map((u: any) => [(u.id || u._id).toString(), u]),
+        );
+
+        if (payload.senderId) {
+          payload.sender = userMap.get(payload.senderId.toString()) || null;
+        }
+
+        if (payload.replyTo && payload.replyTo.senderId) {
+          payload.replyTo.sender = userMap.get(payload.replyTo.senderId.toString()) || null;
+        }
+      } catch (err) {
+        console.error('Failed to fetch user details for websocket message:', err);
+      }
     }
 
     const members = await this.memberModel
@@ -133,7 +174,7 @@ export class ChatService {
       roomId: roomId.toString(),
     });
 
-    return message;
+    return payload;
   }
 
   async setUserOnline(userId: string) {
@@ -449,7 +490,7 @@ export class ChatService {
 
   async toggleReaction(userId: string, reaction: ReactionDto) {
     const message = await this.messageModel.findById(reaction.messageId);
-    if (!message) throw new NotFoundException('message.not-found')
+    if (!message) throw new NotFoundException('message.not-found');
 
     const existingReactionIndex = message.reactions.findIndex(
       (r) => r.userId.toString() === userId.toString(),
@@ -472,10 +513,41 @@ export class ChatService {
 
     await message.save();
 
+    const plainReactions = message.reactions.map((r: any) =>
+      r.toObject ? r.toObject() : { userId: r.userId, emoji: r.emoji },
+    );
+
+    const reactionUserIds = Array.from(
+      new Set(plainReactions.map((r: any) => r.userId?.toString()).filter(Boolean)),
+    );
+
+    let populatedReactions = plainReactions;
+
+    if (reactionUserIds.length > 0) {
+      try {
+        const usersResponse = await firstValueFrom(
+          this.userClient.send('users.details', { userIds: reactionUserIds }),
+        );
+
+        const usersList = Array.isArray(usersResponse) ? usersResponse : (usersResponse?.data || []);
+        const userMap = new Map<string, any>(
+          usersList.map((u: any) => [(u.id || u._id).toString(), u]),
+        );
+
+        populatedReactions = plainReactions.map((r: any) => ({
+          userId: r.userId,
+          emoji: r.emoji,
+          user: userMap.get(r.userId?.toString()) || null,
+        }));
+      } catch (err) {
+        console.error('Failed to fetch reaction users for websocket:', err);
+      }
+    }
+
     return {
       roomId: message.roomId.toString(),
       messageId: message._id,
-      reactions: message.reactions,
+      reactions: populatedReactions,
     };
   }
 
