@@ -479,8 +479,12 @@ export class ChatService {
     };
   }
 
-  async getRoomMessages(roomId: string, limit: number = 20, context: Context, messageId?: string) {
-
+  async getRoomMessages(
+    roomId: string,
+    limit: number = 20,
+    context: Context,
+    messageId?: string,
+  ) {
     const normalizedRoomId = NormalizeObjectId.getObjectIdOrString(roomId);
     const normalizedUserId = NormalizeObjectId.getObjectIdOrString(context.sub);
 
@@ -498,22 +502,18 @@ export class ChatService {
       const targetMessage = await this.messageModel
         .findOne({
           _id: NormalizeObjectId.getObjectIdOrString(messageId),
-          roomId: normalizedRoomId
+          roomId: normalizedRoomId,
         })
         .select('_id createdAt')
+        .lean()
         .exec();
 
-      if (!targetMessage) {
-        throw new NotFoundException('Message not found');
-      }
-
+      if (!targetMessage) throw new NotFoundException('Message not found');
       cursorDate = targetMessage.createdAt;
     }
 
-    const query: Record<string, any> = { roomId: NormalizeObjectId.getObjectIdOrString(roomId) };
-    if (cursorDate) {
-      query.createdAt = { $lt: cursorDate };
-    }
+    const query: Record<string, any> = { roomId: normalizedRoomId };
+    if (cursorDate) query.createdAt = { $lt: cursorDate };
 
     const messages = await this.messageModel
       .find(query)
@@ -524,42 +524,108 @@ export class ChatService {
 
     const sortedMessages = messages.reverse();
 
-    const senderIds = Array.from(
+    const replyToIds = Array.from(
       new Set(
         sortedMessages
-          .map((msg) => msg.senderId?.toString())
-          .filter(Boolean)
-      )
+          .map((m) => m.replyTo?.toString())
+          .filter((id): id is string => Boolean(id)),
+      ),
     );
 
-    let userMap = new Map<string, any>();
+    let replyMap = new Map<string, any>();
+    if (replyToIds.length > 0) {
 
-    if (senderIds.length > 0) {
+      const replyDocs = await this.messageModel
+        .find({ _id: { $in: replyToIds } })
+        .lean()
+        .exec();
+
+      replyMap = new Map(replyDocs.map((d) => [d._id.toString(), d]));
+    }
+
+    const allUserIds = new Set<string>();
+
+    for (const msg of sortedMessages) {
+      if (msg.senderId) allUserIds.add(msg.senderId.toString());
+
+      if (Array.isArray(msg.reactions)) {
+        for (const r of msg.reactions) {
+          if (r?.userId) allUserIds.add(r.userId.toString());
+        }
+      }
+
+      if (msg.replyTo) {
+        const replyDoc = replyMap.get(msg.replyTo.toString());
+        if (replyDoc?.senderId) allUserIds.add(replyDoc.senderId.toString());
+
+        if (Array.isArray(replyDoc?.reactions)) {
+          for (const rr of replyDoc.reactions) {
+            if (rr?.userId) allUserIds.add(rr.userId.toString());
+          }
+        }
+      }
+    }
+
+    let userMap = new Map<string, any>();
+    const userIdsArray = Array.from(allUserIds);
+
+    if (userIdsArray.length > 0) {
       try {
         const response = await firstValueFrom(
-          this.userClient.send('users.details', { userIds: senderIds })
+          this.userClient.send('users.details', { userIds: userIdsArray }),
         );
 
         const users: any[] = response?.data || response || [];
-
-        userMap = new Map(
-          users.map((user) => [user._id.toString(), user])
-        );
+        if (Array.isArray(users)) {
+          userMap = new Map(
+            users.map((u) => [(u.id || u._id)?.toString(), u]),
+          );
+        }
       } catch (error) {
 
         console.error('Failed to fetch user details:', error);
       }
     }
 
-    const populatedMessages = sortedMessages.map((msg) => ({
-      ...msg,
-      sender: userMap.get(msg.senderId?.toString()) || null,
-    }));
+    const populatedMessages = sortedMessages.map((msg) => {
+      const sender = userMap.get(msg.senderId?.toString()) || null;
+
+      const reactions = Array.isArray(msg.reactions)
+        ? msg.reactions.map((r: any) => ({
+          ...r,
+          user: userMap.get(r.userId?.toString()) || null,
+        }))
+        : [];
+
+      let replyTo: any = null;
+      if (msg.replyTo) {
+        const rawReply = replyMap.get(msg.replyTo.toString());
+        if (rawReply) {
+          replyTo = {
+            ...rawReply,
+            sender: userMap.get(rawReply.senderId?.toString()) || null,
+            reactions: Array.isArray(rawReply.reactions)
+              ? rawReply.reactions.map((rr: any) => ({
+                ...rr,
+                user: userMap.get(rr.userId?.toString()) || null,
+              }))
+              : [],
+          };
+        }
+      }
+
+      return {
+        ...msg,
+        sender,
+        reactions,
+        replyTo,
+      };
+    });
 
     return {
       messages: populatedMessages,
       hasMore: messages.length === limit,
-      nextCursor: sortedMessages.length > 0 ? populatedMessages[0]._id : null,
+      nextCursor: populatedMessages.length > 0 ? populatedMessages[0]._id : null,
     };
   }
 
