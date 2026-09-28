@@ -1,4 +1,4 @@
-import { ForbiddenException, HttpStatus, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, HttpStatus, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import Room from './models/concrete/room';
 import { Model, Types } from 'mongoose';
@@ -999,4 +999,5 @@ export class ChatService {
       },
     };
   }
+
 }

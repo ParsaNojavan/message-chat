@@ -24,4 +24,22 @@ export class GroupController {
         return await this.groupService.removeMember(data.roomId, data.memberId, context)
     }
 
+    @MessagePattern('group.common')
+    async handleGetCommonRooms(
+        @Payload() payload: {
+            targetUserId: string;
+            cursor?: string;
+            limit?: number | string
+        },
+        @RPCContext() context
+    ) {
+
+        return await this.groupService.getCommonRooms(
+            context.sub,
+            payload.targetUserId,
+            payload.cursor,
+            payload.limit,
+        );
+    }
+
 }
