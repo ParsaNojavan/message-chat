@@ -102,35 +102,41 @@ export class GroupService {
         cursor?: string,
         limit: number | string = 20,
     ): Promise<DataResultDto<any>> {
-
-        if (!Types.ObjectId.isValid(targetUserId)) {
-            throw new BadRequestException('user id is invalid');
+        if (!currentUserId || !Types.ObjectId.isValid(currentUserId)) {
+            throw new BadRequestException('currentUserId is required and must be valid');
+        }
+        if (!targetUserId || !Types.ObjectId.isValid(targetUserId)) {
+            throw new BadRequestException('targetUserId is required and must be valid');
         }
 
         const currentObjId = new Types.ObjectId(currentUserId);
         const targetObjId = new Types.ObjectId(targetUserId);
 
         if (currentObjId.equals(targetObjId)) {
-            throw new BadRequestException('can not check common rooms');
+            throw new BadRequestException('cannot check common rooms with yourself');
         }
 
+        const currentStr = currentUserId.toString();
+        const targetStr = targetUserId.toString();
         const parsedLimit = Math.min(Math.max(Number(limit) || 20, 1), 50);
 
-        const commonRoomAgg = await this.memberModel.aggregate<{ _id: Types.ObjectId }>([
+        const commonRoomAgg = await this.memberModel.aggregate<{ _id: string }>([
             {
                 $match: {
-                    userId: { $in: [currentObjId, targetObjId] },
+                    userId: {
+                        $in: [currentObjId, targetObjId, currentStr, targetStr],
+                    },
                 },
             },
             {
                 $group: {
-                    _id: '$roomId',
-                    users: { $addToSet: '$userId' },
+                    _id: { $toString: '$roomId' },
+                    users: { $addToSet: { $toString: '$userId' } },
                 },
             },
             {
                 $match: {
-                    $expr: { $gte: [{ $size: '$users' }, 2] },
+                    users: { $all: [currentStr, targetStr] },
                 },
             },
             {
@@ -138,22 +144,21 @@ export class GroupService {
             },
         ]);
 
-        const commonRoomIds = commonRoomAgg.map((item) => item._id);
-
-        if (!commonRoomIds.length) {
+        if (!commonRoomAgg || commonRoomAgg.length === 0) {
             return {
                 success: true,
                 statusCode: HttpStatus.OK,
                 message: 'common-rooms.empty',
-                data: {
-                    items: [],
-                    nextCursor: null,
-                }
+                data: { items: [], nextCursor: null },
             };
         }
 
+        const commonRoomObjectIds = commonRoomAgg
+            .filter((item) => Types.ObjectId.isValid(item._id))
+            .map((item) => new Types.ObjectId(item._id));
+
         const filterQuery: any = {
-            _id: { $in: commonRoomIds },
+            _id: { $in: commonRoomObjectIds },
             type: ChatType.GROUP,
         };
 
@@ -162,7 +167,7 @@ export class GroupService {
                 throw new BadRequestException('cursor invalid');
             }
             filterQuery._id = {
-                $in: commonRoomIds,
+                $in: commonRoomObjectIds,
                 $lt: new Types.ObjectId(cursor),
             };
         }
@@ -181,11 +186,11 @@ export class GroupService {
         return {
             success: true,
             statusCode: HttpStatus.OK,
-            message: 'common-rooms.fetched.successfuly',
+            message: 'common-rooms.fetched.successfully',
             data: {
                 items,
-                nextCursor
-            }
+                nextCursor,
+            },
         };
     }
 }
