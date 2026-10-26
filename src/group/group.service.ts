@@ -120,6 +120,7 @@ export class GroupService {
         const targetStr = targetUserId.toString();
         const parsedLimit = Math.min(Math.max(Number(limit) || 20, 1), 50);
 
+        // ۱. استخراج آی‌دی روم‌هایی که هر دو کاربر عضو آن‌ها هستند
         const commonRoomAgg = await this.memberModel.aggregate<{ _id: string }>([
             {
                 $match: {
@@ -157,6 +158,7 @@ export class GroupService {
             .filter((item) => Types.ObjectId.isValid(item._id))
             .map((item) => new Types.ObjectId(item._id));
 
+        // ۲. فیلتر کردن اتاق‌های از نوع GROUP
         const filterQuery: any = {
             _id: { $in: commonRoomObjectIds },
             type: ChatType.GROUP,
@@ -172,16 +174,27 @@ export class GroupService {
             };
         }
 
+        // ۳. دریافت اتاق‌ها به همراه فیلدهای name و avatar
         const rooms = await this.roomModel
             .find(filterQuery)
             .sort({ _id: -1 })
             .limit(parsedLimit + 1)
-            .select('name avatar type createdAt updatedAt')
+            .select('_id name avatar type createdAt updatedAt')
             .lean();
 
         const hasNext = rooms.length > parsedLimit;
-        const items = hasNext ? rooms.slice(0, parsedLimit) : rooms;
-        const nextCursor = hasNext && items.length > 0 ? items[items.length - 1]._id.toString() : null;
+        const rawItems = hasNext ? rooms.slice(0, parsedLimit) : rooms;
+        const nextCursor = hasNext && rawItems.length > 0 ? rawItems[rawItems.length - 1]._id.toString() : null;
+
+        // ۴. فرمت کردن خروجی برای اطمینان از وجود فیلدهای name و avatar
+        const items = rawItems.map((room: any) => ({
+            _id: room._id.toString(),
+            name: room.name ?? 'Unnamed Group',
+            avatar: room.avatar ?? null,
+            type: room.type,
+            createdAt: room.createdAt,
+            updatedAt: room.updatedAt,
+        }));
 
         return {
             success: true,

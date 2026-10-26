@@ -303,6 +303,21 @@ export class ChatService {
       })
       .exec();
 
+    const roomIds = memberships.map((m) => (m.roomId as any)?._id).filter(Boolean);
+
+    const lastMessages = await this.messageModel.aggregate([
+      { $match: { roomId: { $in: roomIds } } },
+      { $sort: { createdAt: -1 } },
+      {
+        $group: {
+          _id: "$roomId",
+          lastMessage: { $first: "$$ROOT" }
+        }
+      }
+    ]);
+
+    const lastMessageMap = new Map(lastMessages.map(item => [item._id.toString(), item.lastMessage]));
+
     const dmRoomIds = memberships
       .filter((m) => (m.roomId as any)?.type === 'DM')
       .map((m) => (m.roomId as any)._id);
@@ -311,43 +326,30 @@ export class ChatService {
 
     if (dmRoomIds.length > 0) {
       const dmOtherMembers = await this.memberModel
-        .find({
-          roomId: { $in: dmRoomIds },
-          userId: { $nin: userObjectId },
-        })
+        .find({ roomId: { $in: dmRoomIds }, userId: { $nin: userObjectId } })
         .select('roomId userId')
         .exec();
-
-      dmOtherMembers.forEach((m) => {
-        dmTargetUserIdMap.set(m.roomId.toString(), m.userId.toString());
-      });
+      dmOtherMembers.forEach((m) => dmTargetUserIdMap.set(m.roomId.toString(), m.userId.toString()));
     }
 
-    const uniqueTargetUserIds = Array.from(new Set(dmTargetUserIdMap.values()));
+    const userIdsToFetch = new Set<string>([
+      ...Array.from(dmTargetUserIdMap.values()),
+      ...lastMessages.map(m => m.lastMessage.senderId?.toString()).filter(Boolean)
+    ]);
+
     const usersDetailMap = new Map<string, any>();
-
-    console.log(uniqueTargetUserIds)
-
-    if (uniqueTargetUserIds.length > 0) {
+    if (userIdsToFetch.size > 0) {
       try {
         const usersResponse = await firstValueFrom(
-          this.userClient.send('users.details', { userIds: uniqueTargetUserIds })
+          this.userClient.send('users.details', { userIds: Array.from(userIdsToFetch) })
         );
-
-        console.log(usersResponse)
-
-        const usersList = Array.isArray(usersResponse)
-          ? usersResponse
-          : usersResponse?.data || [];
-
+        const usersList = Array.isArray(usersResponse) ? usersResponse : (usersResponse?.data || []);
         usersList.forEach((u: any) => {
           const id = (u.id || u._id)?.toString();
-          if (id) {
-            usersDetailMap.set(id, u);
-          }
+          if (id) usersDetailMap.set(id, u);
         });
       } catch (error) {
-        console.error('Error fetching users from User Microservice:', error);
+        console.error('Error fetching users:', error);
       }
     }
 
@@ -364,19 +366,26 @@ export class ChatService {
           mutedUntil: member.mutedUntil || null,
           role: member.role,
           joinedAt: member.joinedAt,
+          lastMessage: null
         };
+
+        const lastMsg = lastMessageMap.get(room._id.toString());
+        if (lastMsg) {
+          roomData.lastMessage = {
+            content: lastMsg.content,
+            createdAt: lastMsg.createdAt,
+            sender: usersDetailMap.get(lastMsg.senderId?.toString()) || null
+          };
+        }
 
         if (room.type === 'DM') {
           const targetUserId = dmTargetUserIdMap.get(room._id.toString());
-
           if (targetUserId) {
             roomData.targetUserId = targetUserId;
             const targetUser = usersDetailMap.get(targetUserId);
-
             if (targetUser) {
               roomData.otherUser = targetUser;
-              const fullName = `${targetUser.firstName || ''} ${targetUser.lastName || ''}`.trim();
-              roomData.name = fullName || room.name || 'کاربر';
+              roomData.name = `${targetUser.firstName || ''} ${targetUser.lastName || ''}`.trim() || room.name || 'کاربر';
               roomData.avatar = targetUser.photoUrl || roomData.avatar;
             }
           }
@@ -392,14 +401,13 @@ export class ChatService {
       message: 'rooms.fetched.successfuly',
       data: rooms,
     };
-
   }
 
   async isUserBlockedInRoom(roomId: string, senderId: string): Promise<boolean> {
     const room = await this.roomModel.findById(roomId).select('type members');
 
     if (!room) {
-      throw new NotFoundException('روم یافت نشد');
+      throw new NotFoundException('Room not found');
     }
 
     if (room.type !== 'DM') {
