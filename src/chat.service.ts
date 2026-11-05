@@ -575,7 +575,6 @@ export class ChatService {
 
     if (!memberShip) throw new ForbiddenException('access denied');
 
-
     let cursorDate: Date | null = null;
 
     if (messageId) {
@@ -614,7 +613,6 @@ export class ChatService {
 
     let replyMap = new Map<string, any>();
     if (replyToIds.length > 0) {
-
       const replyDocs = await this.messageModel
         .find({ _id: { $in: replyToIds } })
         .lean()
@@ -628,6 +626,11 @@ export class ChatService {
     for (const msg of sortedMessages) {
       if (msg.senderId) allUserIds.add(msg.senderId.toString());
 
+      // ۱. اضافه کردن آیدی کاربرِ فوروارد شده به لیست استعلام از مایکروسرویس
+      if (msg.forwardedFromUser) {
+        allUserIds.add(msg.forwardedFromUser.toString());
+      }
+
       if (Array.isArray(msg.reactions)) {
         for (const r of msg.reactions) {
           if (r?.userId) allUserIds.add(r.userId.toString());
@@ -637,6 +640,7 @@ export class ChatService {
       if (msg.replyTo) {
         const replyDoc = replyMap.get(msg.replyTo.toString());
         if (replyDoc?.senderId) allUserIds.add(replyDoc.senderId.toString());
+        if (replyDoc?.forwardedFromUser) allUserIds.add(replyDoc.forwardedFromUser.toString());
 
         if (Array.isArray(replyDoc?.reactions)) {
           for (const rr of replyDoc.reactions) {
@@ -662,13 +666,17 @@ export class ChatService {
           );
         }
       } catch (error) {
-
         console.error('Failed to fetch user details:', error);
       }
     }
 
     const populatedMessages = sortedMessages.map((msg) => {
       const sender = userMap.get(msg.senderId?.toString()) || null;
+
+      // ۲. مپ کردن اطلاعات کاربرِ فوروارد شده از پاسخ مایکروسرویس
+      const forwardedFromUser = msg.forwardedFromUser
+        ? userMap.get(msg.forwardedFromUser.toString()) || null
+        : null;
 
       const reactions = Array.isArray(msg.reactions)
         ? msg.reactions.map((r: any) => ({
@@ -684,6 +692,9 @@ export class ChatService {
           replyTo = {
             ...rawReply,
             sender: userMap.get(rawReply.senderId?.toString()) || null,
+            forwardedFromUser: rawReply.forwardedFromUser
+              ? userMap.get(rawReply.forwardedFromUser.toString()) || null
+              : null,
             reactions: Array.isArray(rawReply.reactions)
               ? rawReply.reactions.map((rr: any) => ({
                 ...rr,
@@ -697,6 +708,7 @@ export class ChatService {
       return {
         ...msg,
         sender,
+        forwardedFromUser,
         reactions,
         replyTo,
       };
@@ -708,6 +720,7 @@ export class ChatService {
       nextCursor: populatedMessages.length > 0 ? populatedMessages[0]._id : null,
     };
   }
+
 
   async searchRoomMessages(
     roomId: string,
