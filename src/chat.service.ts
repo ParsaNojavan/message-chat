@@ -332,25 +332,50 @@ export class ChatService {
       dmOtherMembers.forEach((m) => dmTargetUserIdMap.set(m.roomId.toString(), m.userId.toString()));
     }
 
+    const dmTargetUserIds = Array.from(dmTargetUserIdMap.values());
     const userIdsToFetch = new Set<string>([
-      ...Array.from(dmTargetUserIdMap.values()),
+      ...dmTargetUserIds,
       ...lastMessages.map(m => m.lastMessage.senderId?.toString()).filter(Boolean)
     ]);
 
     const usersDetailMap = new Map<string, any>();
+    const contactsMap = new Map<string, any>();
+
+    const fetchPromises: Promise<any>[] = [];
+
     if (userIdsToFetch.size > 0) {
-      try {
-        const usersResponse = await firstValueFrom(
+      fetchPromises.push(
+        firstValueFrom(
           this.userClient.send('users.details', { userIds: Array.from(userIdsToFetch) })
-        );
-        const usersList = Array.isArray(usersResponse) ? usersResponse : (usersResponse?.data || []);
-        usersList.forEach((u: any) => {
-          const id = (u.id || u._id)?.toString();
-          if (id) usersDetailMap.set(id, u);
-        });
-      } catch (error) {
-        console.error('Error fetching users:', error);
-      }
+        ).then((usersResponse) => {
+          const usersList = Array.isArray(usersResponse) ? usersResponse : (usersResponse?.data || []);
+          usersList.forEach((u: any) => {
+            const id = (u.id || u._id)?.toString();
+            if (id) usersDetailMap.set(id, u);
+          });
+        }).catch((err) => console.error('Error fetching users:', err))
+      );
+    }
+
+    if (dmTargetUserIds.length > 0) {
+      fetchPromises.push(
+        firstValueFrom(
+          this.userClient.send('contacts.list', {
+            userIds: dmTargetUserIds,
+            context
+          })
+        ).then((contactsResponse) => {
+          const contactItems = contactsResponse?.data?.items || [];
+          contactItems.forEach((c: any) => {
+            const cUserId = (c.contactUserId?._id || c.contactUserId)?.toString();
+            if (cUserId) contactsMap.set(cUserId, c);
+          });
+        }).catch((err) => console.error('Error fetching contacts:', err))
+      );
+    }
+
+    if (fetchPromises.length > 0) {
+      await Promise.all(fetchPromises);
     }
 
     const rooms = memberships
@@ -383,10 +408,20 @@ export class ChatService {
           if (targetUserId) {
             roomData.targetUserId = targetUserId;
             const targetUser = usersDetailMap.get(targetUserId);
+            const contact = contactsMap.get(targetUserId);
+
             if (targetUser) {
               roomData.otherUser = targetUser;
+              roomData.avatar = targetUser.photoUrl || targetUser.avatar || roomData.avatar;
+            }
+
+            if (contact) {
+              const contactName = `${contact.customFirstName || ''} ${contact.customLastName || ''}`.trim();
+              roomData.name = contactName || `${targetUser?.firstName || ''} ${targetUser?.lastName || ''}`.trim() || 'کاربر';
+              roomData.isContact = true;
+            } else if (targetUser) {
               roomData.name = `${targetUser.firstName || ''} ${targetUser.lastName || ''}`.trim() || room.name || 'کاربر';
-              roomData.avatar = targetUser.photoUrl || roomData.avatar;
+              roomData.isContact = false;
             }
           }
         }
