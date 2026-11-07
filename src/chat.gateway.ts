@@ -418,4 +418,33 @@ export class ChatGateway implements OnModuleInit, OnGatewayConnection, OnGateway
       return { status: 'error', message: error.message };
     }
   }
+
+  @UseGuards(WsJwtGuard)
+  @SubscribeMessage('pin.toggle')
+  async handleTogglePin(
+    @ConnectedSocket() client: AuthenticatedSocket,
+    @MessageBody() body: { roomId: string; messageId: string },
+  ) {
+    const userId = client.data.user.sub;
+    const result = await this.chatService.togglePinMessage(body.roomId, body.messageId, userId);
+
+    if (result.data.action === 'unpinned') {
+      this.server.to(body.roomId).emit('message.unpinned', {
+        roomId: result.data.roomId,
+        messageId: result.data.messageId,
+      });
+    } else {
+      this.server.to(body.roomId).emit('message.pinned', {
+        roomId: result.data.roomId,
+        pin: {
+          message: result.data.message,
+          pinnedBy: result.data.pinnedBy,
+          pinnedAt: result.data.pinnedAt,
+        },
+      });
+    }
+
+    return { success: true, action: result.data.action };
+  }
+
 }
