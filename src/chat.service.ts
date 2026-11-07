@@ -1056,4 +1056,121 @@ export class ChatService {
     };
   }
 
+  async togglePinMessage(roomId: string, messageId: string, userId: string): Promise<DataResultDto<any>> {
+    const rId = roomId;
+    const mId = new Types.ObjectId(messageId);
+    const uId = new Types.ObjectId(userId);
+
+    const message = await this.messageModel.findOne({ _id: mId, roomId: rId });
+    if (!message) {
+      throw new NotFoundException('message not found.');
+    }
+
+    console.log(message)
+
+    const room = await this.roomModel.findById(rId);
+    if (!room) {
+      throw new NotFoundException('room not found');
+    }
+
+    console.log(room)
+
+    const isAlreadyPinned = room.pinnedMessages?.some(
+      (p: any) => p.messageId?.toString() === messageId
+    );
+
+    if (isAlreadyPinned) {
+      await this.roomModel.findByIdAndUpdate(rId, {
+        $pull: {
+          pinnedMessages: { messageId: mId },
+        },
+      });
+
+      return {
+        statusCode: HttpStatus.OK,
+        success: true,
+        message: 'message unpinned',
+        data: {
+          action: 'unpinned',
+          roomId,
+          messageId,
+        }
+      };
+    }
+
+    const pinnedAt = new Date();
+    await this.roomModel.findByIdAndUpdate(rId, {
+      $push: {
+        pinnedMessages: {
+          messageId: mId,
+          pinnedBy: uId,
+          pinnedAt,
+        },
+      },
+    });
+
+    return {
+      statusCode: HttpStatus.OK,
+      success: true,
+      message: 'message pinned successfuly',
+      data: {
+        action: 'pinned' as const,
+        roomId,
+        message,
+        pinnedAt,
+        pinnedBy: uId,
+      }
+    };
+  }
+
+  async unpinMessage(roomId: string, messageId: string) {
+    const rId = new Types.ObjectId(roomId);
+    const mId = new Types.ObjectId(messageId);
+
+    const result = await this.roomModel.findByIdAndUpdate(
+      rId,
+      {
+        $pull: {
+          pinnedMessages: { messageId: mId },
+        },
+      },
+      { new: true }
+    );
+
+    if (!result) {
+      throw new NotFoundException('room not found');
+    }
+
+    return { messageId, roomId };
+  }
+
+  async getPinnedMessages(roomId: string, context: Context) {
+    const userId = context.sub;
+
+    if (userId) {
+      const isMember = await this.memberModel.exists({
+        roomId: new Types.ObjectId(roomId),
+        userId: userId,
+      });
+      console.log(isMember)
+      if (!isMember) {
+        throw new ForbiddenException('access denied');
+      }
+    }
+
+    const room = await this.roomModel
+      .findById(roomId)
+      .populate({
+        path: 'pinnedMessages.messageId',
+      });
+
+      console.log(room)
+
+    if (!room) {
+      throw new NotFoundException('room not found');
+    }
+
+    return room.pinnedMessages;
+  }
+
 }

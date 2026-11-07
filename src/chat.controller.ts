@@ -73,6 +73,18 @@ export class ChatController {
     );
   }
 
+  @MessagePattern('room.pins')
+  async getRoomPins(
+    @Payload() payload: { roomId },
+    @RPCContext() context
+  ) {
+
+    return await this.chatService.getPinnedMessages(
+      payload.roomId,
+      context
+    );
+  }
+
   @MessagePattern('room.messages.search')
   async handleSearchRoomMessages(@Payload() payload: { roomId, query, limit, messageId },
     @RPCContext() context
