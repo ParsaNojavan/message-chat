@@ -16,6 +16,8 @@ export default class RoomMember extends Document implements IEntity {
     joinedAt: Date;
     @Prop({ type: Date })
     mutedUntil?: Date
+    @Prop({ type: Date, default: null, index: true })
+    pinnedAt?: Date | null;
 }
 
 export type RoomDocument = RoomMember & Document & {
@@ -25,3 +27,4 @@ export type RoomDocument = RoomMember & Document & {
 
 export const RoomMemberSchema = SchemaFactory.createForClass(RoomMember);
 RoomMemberSchema.index({ roomId: 1, userId: 1 }, { unique: true });
+RoomMemberSchema.index({ userId: 1, pinnedAt: -1 });
