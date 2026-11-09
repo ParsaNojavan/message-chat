@@ -16,15 +16,21 @@ import ReactionDto from '@app/contracts/models/dtos/chat/reaction.dto';
 import { NormalizeObjectId } from '@app/contracts/utils/mongoose/normalizeObjectId';
 import { firstValueFrom, lastValueFrom } from 'rxjs';
 import Context from '@app/contracts/models/dtos/rpcContext';
+import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class ChatService {
+  private readonly maxPinnedRooms: number;
+
   constructor(@InjectModel(Room.name) private roomModel: Model<Room>,
     @InjectModel(Message.name) private messageModel: Model<MessageDocument>,
     @InjectModel(RoomMember.name) private memberModel: Model<RoomMember>,
     @Inject('REDIS_CLIENT') private readonly redis: Redis,
     @Inject('notification-client') private notificationClient: ClientProxy,
-    @Inject('user-client') private userClient: ClientProxy) { }
+    @Inject('user-client') private userClient: ClientProxy,
+    private readonly configService: ConfigService) {
+    this.maxPinnedRooms = Number(this.configService.get<number>('MAX_PINNED_ROOMS', 5));
+  }
 
   async isUserMemberOfRoom(roomId: string, userId: string): Promise<boolean> {
     const isMember = await this.memberModel.exists({
@@ -391,6 +397,7 @@ export class ChatService {
           mutedUntil: member.mutedUntil || null,
           role: member.role,
           joinedAt: member.joinedAt,
+          pinnedAt: member.pinnedAt,
           lastMessage: null
         };
 
@@ -1164,13 +1171,68 @@ export class ChatService {
         path: 'pinnedMessages.messageId',
       });
 
-      console.log(room)
+    console.log(room)
 
     if (!room) {
       throw new NotFoundException('room not found');
     }
 
     return room.pinnedMessages;
+  }
+
+  async togglePinRoom(userId: string, roomId: string)
+    : Promise<DataResultDto<any>> {
+    const userObjId = userId;
+    const roomObjId = new Types.ObjectId(roomId);
+
+    const membership = await this.memberModel.findOne({
+      roomId: roomObjId,
+      userId: userObjId,
+    });
+
+    if (!membership) {
+      throw new NotFoundException('Access denied');
+    }
+
+    if (membership.pinnedAt) {
+      membership.pinnedAt = null;
+      await membership.save();
+
+      return {
+        success: true,
+        statusCode: HttpStatus.OK,
+        message: 'message.unpinned.successfuly',
+        data: {
+          isPinned: false,
+          pinnedAt: null,
+          roomId,
+        }
+      };
+    }
+
+    const currentPinnedCount = await this.memberModel.countDocuments({
+      userId: userObjId,
+      pinnedAt: { $ne: null },
+    });
+
+    if (currentPinnedCount >= this.maxPinnedRooms) {
+      throw new BadRequestException('max pin limit reached');
+    }
+
+    const now = new Date();
+    membership.pinnedAt = now;
+    await membership.save();
+
+    return {
+      success: true,
+      statusCode: HttpStatus.OK,
+      message: 'message.pinned.successfuly',
+      data: {
+        isPinned: true,
+        pinnedAt: now,
+        roomId
+      }
+    };
   }
 
 }

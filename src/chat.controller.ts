@@ -129,4 +129,15 @@ export class ChatController {
     );
   }
 
+  @MessagePattern('room.pin')
+  async handleTogglePinRoom(
+    @Payload() payload: { roomId },
+    @RPCContext() context
+  ) {
+    const userId = context.sub;
+    const result = await this.chatService.togglePinRoom(userId, payload.roomId);
+
+    return result;
+  }
+
 }
