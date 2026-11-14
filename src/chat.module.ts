@@ -20,6 +20,8 @@ import { ChannelModule } from './channel/channel.module';
 import Reaction, { ReactionSchema } from './models/concrete/reaction';
 import { GroupRtcModule } from './group-rtc/group-rtc.module';
 import { Call, CallSchema } from './models/concrete/call';
+import { ChatFolderModule } from './chat-folder/chat-folder.module';
+import ChatFolder, { ChatFolderSchema } from './models/concrete/chat-folder';
 
 @Module({
   imports: [
@@ -70,12 +72,14 @@ import { Call, CallSchema } from './models/concrete/call';
       { name: RoomMember.name, schema: RoomMemberSchema },
       { name: Message.name, schema: MessageSchema },
       { name: Reaction.name, schema: ReactionSchema},
-      { name: Call.name, schema: CallSchema}
+      { name: Call.name, schema: CallSchema},
+      { name: ChatFolder.name, schema: ChatFolderSchema},
     ]),
     GroupModule,
     DirectModule,
     ChannelModule,
     GroupRtcModule,
+    ChatFolderModule,
   ],
   controllers: [ChatController],
   providers: [ChatGateway, WsJwtGuard, ChatService,
