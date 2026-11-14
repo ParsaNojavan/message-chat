@@ -410,6 +410,11 @@ export class ChatService {
           };
         }
 
+        if (room.type === ChatType.SAVED) {
+          roomData.name = 'Saved Messages';
+          roomData.isSavedMessages = true;
+        }
+
         if (room.type === 'DM') {
           const targetUserId = dmTargetUserIdMap.get(room._id.toString());
           if (targetUserId) {
@@ -442,6 +447,65 @@ export class ChatService {
       statusCode: HttpStatus.OK,
       message: 'rooms.fetched.successfuly',
       data: rooms,
+    };
+  }
+
+  async getOrCreateSavedMessagesRoom(context: Context): Promise<DataResultDto<any>> {
+    const userId = context.sub;
+    const userObjectId = new Types.ObjectId(userId);
+
+    const memberships = await this.memberModel
+      .find({ userId: userObjectId })
+      .select('roomId')
+      .lean()
+      .exec();
+
+    const roomIds = memberships.map((m) => m.roomId);
+
+    const savedRoom = roomIds.length > 0
+      ? await this.roomModel
+        .findOne({
+          _id: { $in: roomIds },
+          type: ChatType.SAVED,
+        })
+        .lean()
+        .exec()
+      : null;
+
+    if (savedRoom) {
+      return {
+        success: true,
+        statusCode: HttpStatus.OK,
+        message: 'saved-messages.room.fetched',
+        data: {
+          roomId: savedRoom._id.toString(),
+          type: savedRoom.type,
+          name: savedRoom.name || 'Saved Messages',
+        },
+      };
+    }
+
+    const newRoom = await this.roomModel.create({
+      type: ChatType.SAVED,
+      name: 'Saved Messages',
+    });
+
+    await this.memberModel.create({
+      roomId: newRoom._id,
+      userId: userObjectId,
+      role: RoleType.OWNER,
+      joinedAt: new Date(),
+    });
+
+    return {
+      success: true,
+      statusCode: HttpStatus.CREATED,
+      message: 'saved-messages.room.created',
+      data: {
+        roomId: newRoom._id.toString(),
+        type: newRoom.type,
+        name: newRoom.name,
+      },
     };
   }
 

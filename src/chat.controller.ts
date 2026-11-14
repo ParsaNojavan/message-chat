@@ -140,4 +140,9 @@ export class ChatController {
     return result;
   }
 
+  @MessagePattern('chat.get-saved-room')
+  async getSavedMessagesRoom(@RPCContext() context) {
+    return this.chatService.getOrCreateSavedMessagesRoom(context);
+  }
+
 }
