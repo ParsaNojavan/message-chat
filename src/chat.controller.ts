@@ -145,4 +145,20 @@ export class ChatController {
     return this.chatService.getOrCreateSavedMessagesRoom(context);
   }
 
+  @MessagePattern('room.archive')
+  async archiveRoom(
+    @Payload() payload: { roomId },
+    @RPCContext() context
+  ) {
+    return await this.chatService.archiveRoom(payload.roomId, context)
+  }
+
+  @MessagePattern('room.unarchive')
+  async unarchiveRoom(
+    @Payload() payload: { roomId },
+    @RPCContext() context
+  ) {
+    return await this.chatService.unarchiveRoom(payload.roomId, context)
+  }
+
 }
