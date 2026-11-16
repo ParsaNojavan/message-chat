@@ -18,6 +18,8 @@ export default class RoomMember extends Document implements IEntity {
     mutedUntil?: Date
     @Prop({ type: Date, default: null, index: true })
     pinnedAt?: Date | null;
+    @Prop({ type: Boolean, default: false, index: true })
+    isArchived: boolean;
 }
 
 export type RoomDocument = RoomMember & Document & {

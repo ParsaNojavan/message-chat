@@ -398,7 +398,8 @@ export class ChatService {
           role: member.role,
           joinedAt: member.joinedAt,
           pinnedAt: member.pinnedAt,
-          lastMessage: null
+          lastMessage: null,
+          isArchived: member.isArchived
         };
 
         const lastMsg = lastMessageMap.get(room._id.toString());
@@ -1299,4 +1300,68 @@ export class ChatService {
     };
   }
 
+  async archiveRoom(roomId: string, context: Context)
+    : Promise<DataResultDto<any>> {
+
+    const isMember = await this.memberModel.exists({
+      roomId: new Types.ObjectId(roomId),
+      userId: context.sub
+    });
+
+    console.log(isMember)
+
+    if (!isMember) throw new NotFoundException('room not found');
+
+    const updatedMember = await this.memberModel.findOneAndUpdate({
+      roomId: new Types.ObjectId(roomId),
+      userId: context.sub
+    },
+      {
+        isArchived: true
+      },
+      {
+        new: true
+      });
+
+    console.log(updatedMember)
+
+    return {
+      success: true,
+      statusCode: HttpStatus.OK,
+      message: 'room.archived.success',
+      data: updatedMember
+    }
+  }
+
+  async unarchiveRoom(roomId: string, context: Context)
+    : Promise<DataResultDto<any>> {
+
+    const isMember = await this.memberModel.exists({
+      roomId: new Types.ObjectId(roomId),
+      userId: context.sub
+    });
+
+    console.log(isMember)
+
+    if (!isMember) throw new NotFoundException('room not found');
+
+    const updatedMember = await this.memberModel.findOneAndUpdate({
+      roomId: new Types.ObjectId(roomId),
+      userId: context.sub
+    }, {
+      isArchived: false
+    },
+      {
+        new: true
+      });
+
+    console.log(updatedMember)
+
+    return {
+      success: true,
+      statusCode: HttpStatus.OK,
+      message: 'room.unarchived.success',
+      data: updatedMember
+    }
+  }
 }
