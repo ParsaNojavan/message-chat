@@ -447,4 +447,24 @@ export class ChatGateway implements OnModuleInit, OnGatewayConnection, OnGateway
     return { success: true, action: result.data.action };
   }
 
+  @UseGuards(WsJwtGuard)
+  @SubscribeMessage('message.edit')
+  async handleEditMessage(
+    @ConnectedSocket() client: AuthenticatedSocket,
+    @MessageBody() body: { messageId: string, content: string },
+  ) {
+    const userId = client.data.user.sub;
+    const result = await this.chatService.editMessage(body.messageId, body.content, userId);
+
+    if (result.data) {
+      this.server.to(result.data.roomId.toString()).emit('message.edited', {
+        messageId: result.data._id,
+        roomId: result.data.roomId,
+        content: result.data.content,
+        editedAt: result.data.editedAt,
+      });
+    }
+
+    return { status: 'success' };
+  }
 }

@@ -44,9 +44,13 @@ export default class Message extends Document implements IEntity {
     forwardedFromRoom?: Types.ObjectId;
     @Prop({ type: [ReactionSchema], default: [] })
     reactions: Reaction[];
-    @Prop({ default: false })
-    isEdited: boolean;
+    @Prop({ type: Date, default: null })
 
+    editedAt?: Date;
+    @Prop({ type: Date, default: null, index: true })
+    deletedAt?: Date;
+    @Prop({ type: Types.ObjectId, ref: 'User' })
+    deletedBy?: Types.ObjectId;
 
 }
 

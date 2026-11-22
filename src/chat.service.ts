@@ -1364,4 +1364,32 @@ export class ChatService {
       data: updatedMember
     }
   }
+
+  async editMessage(messageId: string, content: string, userId: string): Promise<DataResultDto<any>> {
+
+    const updatedMessage = await this.messageModel.findOneAndUpdate({
+      _id: new Types.ObjectId(messageId),
+      senderId: new Types.ObjectId(userId),
+      deletedAt: null
+    }, {
+      $set: {
+        content: content,
+        editedAt: new Date()
+      }
+    }, {
+      new: true
+    });
+
+    if (!updatedMessage) {
+      throw new NotFoundException('message.not-found');
+    }
+
+
+    return {
+      success: true,
+      statusCode: HttpStatus.OK,
+      message: 'message.edit.success',
+      data: updatedMessage
+    }
+  }
 }
