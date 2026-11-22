@@ -467,4 +467,48 @@ export class ChatGateway implements OnModuleInit, OnGatewayConnection, OnGateway
 
     return { status: 'success' };
   }
+
+  @UseGuards(WsJwtGuard)
+  @SubscribeMessage('message.delete.me')
+  async handleDeleteForMeBulk(
+    @ConnectedSocket() client: AuthenticatedSocket,
+    @MessageBody() body: { messageIds: string[] },
+  ) {
+    const userId = client.data.user.sub;
+
+    const result = await this.chatService
+      .deleteMessagesForMe(body.messageIds, userId);
+
+    if (result.success) {
+      this.server.to(userId).emit('message.hidden', {
+        messageIds: body.messageIds,
+      });
+    }
+
+    return result;
+  }
+
+  @UseGuards(WsJwtGuard)
+  @SubscribeMessage('message.delete.everyone')
+  async handleDeleteForEveryoneBulk(
+    @ConnectedSocket() client: AuthenticatedSocket,
+    @MessageBody() body: { messageIds: string[] },
+  ) {
+    const userId = client.data.user.sub;
+    const result = await this.chatService.deleteMessagesForEveryone(body.messageIds, userId);
+
+    if (result.success && result.data) {
+      const { affectedRoomIds, deletedMessageIds } = result.data;
+
+      affectedRoomIds.forEach(roomId => {
+        this.server.to(roomId).emit('message.deleted', {
+          roomId: roomId,
+          messageIds: deletedMessageIds,
+        });
+      });
+    }
+
+    return { success: result.success, message: result.message };
+  }
+
 }

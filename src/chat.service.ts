@@ -17,6 +17,7 @@ import { NormalizeObjectId } from '@app/contracts/utils/mongoose/normalizeObject
 import { firstValueFrom, lastValueFrom } from 'rxjs';
 import Context from '@app/contracts/models/dtos/rpcContext';
 import { ConfigService } from '@nestjs/config';
+import HiddenMessage from './models/concrete/hidden-message';
 
 @Injectable()
 export class ChatService {
@@ -25,6 +26,7 @@ export class ChatService {
   constructor(@InjectModel(Room.name) private roomModel: Model<Room>,
     @InjectModel(Message.name) private messageModel: Model<MessageDocument>,
     @InjectModel(RoomMember.name) private memberModel: Model<RoomMember>,
+    @InjectModel(HiddenMessage.name) private hiddenMessageModel: Model<HiddenMessage>,
     @Inject('REDIS_CLIENT') private readonly redis: Redis,
     @Inject('notification-client') private notificationClient: ClientProxy,
     @Inject('user-client') private userClient: ClientProxy,
@@ -682,6 +684,13 @@ export class ChatService {
 
     if (!memberShip) throw new ForbiddenException('access denied');
 
+    const hiddenMessages = await this.hiddenMessageModel
+      .find({ userId: normalizedUserId, roomId: normalizedRoomId })
+      .select('messageId')
+      .lean()
+      .exec();
+    const hiddenMessageIds = hiddenMessages.map((h) => h.messageId);
+
     let cursorDate: Date | null = null;
 
     if (messageId) {
@@ -690,7 +699,7 @@ export class ChatService {
           _id: NormalizeObjectId.getObjectIdOrString(messageId),
           roomId: normalizedRoomId,
         })
-        .select('_id createdAt')
+        .select('createdAt')
         .lean()
         .exec();
 
@@ -698,8 +707,13 @@ export class ChatService {
       cursorDate = targetMessage.createdAt;
     }
 
-    const query: Record<string, any> = { roomId: normalizedRoomId };
-    if (cursorDate) query.createdAt = { $lt: cursorDate };
+    const query: Record<string, any> = {
+      roomId: normalizedRoomId,
+      _id: { $nin: hiddenMessageIds },
+    };
+    if (cursorDate) {
+      query.createdAt = { $lt: cursorDate };
+    }
 
     const messages = await this.messageModel
       .find(query)
@@ -729,26 +743,18 @@ export class ChatService {
     }
 
     const allUserIds = new Set<string>();
-
     for (const msg of sortedMessages) {
       if (msg.senderId) allUserIds.add(msg.senderId.toString());
-
-      // ۱. اضافه کردن آیدی کاربرِ فوروارد شده به لیست استعلام از مایکروسرویس
-      if (msg.forwardedFromUser) {
-        allUserIds.add(msg.forwardedFromUser.toString());
-      }
-
+      if (msg.forwardedFromUser) allUserIds.add(msg.forwardedFromUser.toString());
       if (Array.isArray(msg.reactions)) {
         for (const r of msg.reactions) {
           if (r?.userId) allUserIds.add(r.userId.toString());
         }
       }
-
       if (msg.replyTo) {
         const replyDoc = replyMap.get(msg.replyTo.toString());
         if (replyDoc?.senderId) allUserIds.add(replyDoc.senderId.toString());
         if (replyDoc?.forwardedFromUser) allUserIds.add(replyDoc.forwardedFromUser.toString());
-
         if (Array.isArray(replyDoc?.reactions)) {
           for (const rr of replyDoc.reactions) {
             if (rr?.userId) allUserIds.add(rr.userId.toString());
@@ -759,18 +765,14 @@ export class ChatService {
 
     let userMap = new Map<string, any>();
     const userIdsArray = Array.from(allUserIds);
-
     if (userIdsArray.length > 0) {
       try {
         const response = await firstValueFrom(
           this.userClient.send('users.details', { userIds: userIdsArray }),
         );
-
         const users: any[] = response?.data || response || [];
         if (Array.isArray(users)) {
-          userMap = new Map(
-            users.map((u) => [(u.id || u._id)?.toString(), u]),
-          );
+          userMap = new Map(users.map((u) => [(u.id || u._id)?.toString(), u]));
         }
       } catch (error) {
         console.error('Failed to fetch user details:', error);
@@ -778,13 +780,27 @@ export class ChatService {
     }
 
     const populatedMessages = sortedMessages.map((msg) => {
-      const sender = userMap.get(msg.senderId?.toString()) || null;
 
-      // ۲. مپ کردن اطلاعات کاربرِ فوروارد شده از پاسخ مایکروسرویس
+      if (msg.deletedAt) {
+        return {
+          _id: msg._id,
+          roomId: msg.roomId,
+          createdAt: msg.createdAt,
+          isDeleted: true,
+          sender: userMap.get(msg.senderId?.toString()) || { _id: msg.senderId },
+          content: '',
+          media: [],
+          reactions: [],
+          replyTo: null,
+          editedAt: null,
+          forwardedFromUser: null,
+        };
+      }
+
+      const sender = userMap.get(msg.senderId?.toString()) || null;
       const forwardedFromUser = msg.forwardedFromUser
         ? userMap.get(msg.forwardedFromUser.toString()) || null
         : null;
-
       const reactions = Array.isArray(msg.reactions)
         ? msg.reactions.map((r: any) => ({
           ...r,
@@ -796,24 +812,34 @@ export class ChatService {
       if (msg.replyTo) {
         const rawReply = replyMap.get(msg.replyTo.toString());
         if (rawReply) {
-          replyTo = {
-            ...rawReply,
-            sender: userMap.get(rawReply.senderId?.toString()) || null,
-            forwardedFromUser: rawReply.forwardedFromUser
-              ? userMap.get(rawReply.forwardedFromUser.toString()) || null
-              : null,
-            reactions: Array.isArray(rawReply.reactions)
-              ? rawReply.reactions.map((rr: any) => ({
-                ...rr,
-                user: userMap.get(rr.userId?.toString()) || null,
-              }))
-              : [],
-          };
+          if (rawReply.deletedAt) {
+            replyTo = {
+              _id: rawReply._id,
+              isDeleted: true,
+              content: '',
+            };
+          } else {
+
+            replyTo = {
+              ...rawReply,
+              sender: userMap.get(rawReply.senderId?.toString()) || null,
+              forwardedFromUser: rawReply.forwardedFromUser
+                ? userMap.get(rawReply.forwardedFromUser.toString()) || null
+                : null,
+              reactions: Array.isArray(rawReply.reactions)
+                ? rawReply.reactions.map((rr: any) => ({
+                  ...rr,
+                  user: userMap.get(rr.userId?.toString()) || null,
+                }))
+                : [],
+            };
+          }
         }
       }
 
       return {
         ...msg,
+        isDeleted: false,
         sender,
         forwardedFromUser,
         reactions,
@@ -1392,4 +1418,65 @@ export class ChatService {
       data: updatedMessage
     }
   }
+
+  async deleteMessagesForMe(messageIds: string[], userId: string): Promise<DataResultDto<any>> {
+
+    const hiddenLinks = messageIds.map(msgId => ({
+      userId: new Types.ObjectId(userId),
+      messageId: new Types.ObjectId(msgId),
+    }));
+
+    await this.hiddenMessageModel.insertMany(hiddenLinks, { ordered: false }).catch(err => {
+
+      if (err.code !== 11000) throw err;
+    });
+
+    return {
+      success: true,
+      statusCode: HttpStatus.OK,
+      message: 'messages.delete.success',
+      data: {
+        processedCount: hiddenLinks.length,
+        messageIds: messageIds
+      }
+    };
+  }
+
+  async deleteMessagesForEveryone(messageIds: string[], userId: string): Promise<DataResultDto<any>> {
+    const objectIds = messageIds.map(id => new Types.ObjectId(id));
+
+    const messagesToDelete = await this.messageModel.find({
+      _id: { $in: objectIds },
+      senderId: new Types.ObjectId(userId),
+      deletedAt: null,
+    }).select('roomId');
+
+    if (messagesToDelete.length === 0) {
+      throw new NotFoundException('messages.not-found-or-unauthorized');
+    }
+
+    const result = await this.messageModel.updateMany({
+      _id: { $in: messagesToDelete.map(m => m._id) }
+    }, {
+      $set: {
+        deletedAt: new Date(),
+        deletedBy: new Types.ObjectId(userId),
+      }
+    });
+
+    const affectedRoomIds = [...new Set(messagesToDelete.map(m => m.roomId.toString()))];
+    const deletedMessageIds = messagesToDelete.map(m => m._id);
+
+    return {
+      success: true,
+      statusCode: HttpStatus.OK,
+      message: 'messages.deleted.success',
+      data: {
+        deletedCount: result.modifiedCount,
+        affectedRoomIds,
+        deletedMessageIds,
+      }
+    };
+  }
+
 }
