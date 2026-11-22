@@ -22,6 +22,7 @@ import { GroupRtcModule } from './group-rtc/group-rtc.module';
 import { Call, CallSchema } from './models/concrete/call';
 import { ChatFolderModule } from './chat-folder/chat-folder.module';
 import ChatFolder, { ChatFolderSchema } from './models/concrete/chat-folder';
+import HiddenMessage, { HiddenMessageSchema } from './models/concrete/hidden-message';
 
 @Module({
   imports: [
@@ -74,6 +75,7 @@ import ChatFolder, { ChatFolderSchema } from './models/concrete/chat-folder';
       { name: Reaction.name, schema: ReactionSchema},
       { name: Call.name, schema: CallSchema},
       { name: ChatFolder.name, schema: ChatFolderSchema},
+      { name: HiddenMessage.name, schema: HiddenMessageSchema},
     ]),
     GroupModule,
     DirectModule,
