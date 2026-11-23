@@ -47,10 +47,19 @@ export class DirectService {
             throw new BadRequestException('roomIds.array.required');
         }
 
-        const normalizedUserId = NormalizeObjectId.getObjectIdOrString(userId);
+        const normalizedUserIds = [
+            ...[NormalizeObjectId.getObjectIdOrString(userId)].flat(),
+            new Types.ObjectId(userId),
+            userId.toString(),
+        ];
+
         const normalizedRoomIds = roomIds
             .filter(id => Types.ObjectId.isValid(id))
-            .map(id => NormalizeObjectId.getObjectIdOrString(id));
+            .flatMap(id => [
+                ...[NormalizeObjectId.getObjectIdOrString(id)].flat(),
+                new Types.ObjectId(id),
+                id.toString(),
+            ]);
 
         if (normalizedRoomIds.length === 0) {
             throw new BadRequestException('valid.roomIds.required');
@@ -61,10 +70,14 @@ export class DirectService {
             type: { $in: [ChatType.DM, ChatType.SAVED] }
         }).select('_id').lean();
 
-        const allowedRoomIds = allowedRooms.map(r => r._id);
+        const allowedRoomIds = allowedRooms.flatMap(r => [
+            r._id,
+            r._id.toString(),
+            new Types.ObjectId(r._id.toString())
+        ]);
         const allowedRoomIdsStr = allowedRooms.map(r => r._id.toString());
 
-        if (allowedRoomIds.length === 0) {
+        if (allowedRooms.length === 0) {
             throw new BadRequestException('no.valid.dm.or.saved.rooms.found');
         }
 
@@ -72,13 +85,14 @@ export class DirectService {
 
         await this.memberModel.updateMany(
             {
-                userId: { $in: [normalizedUserId, userId.toString()] },
-                roomId: { $in: [...allowedRoomIds, ...allowedRoomIdsStr] }
+                userId: { $in: normalizedUserIds },
+                roomId: { $in: allowedRoomIds }
             },
             {
                 $set: {
                     clearedAt: now,
                     isHiddenInList: true,
+                    pinnedAt: null,
                 }
             }
         );
@@ -98,10 +112,16 @@ export class DirectService {
             throw new BadRequestException('invalid.roomId');
         }
 
-        const normalizedRoomId = NormalizeObjectId.getObjectIdOrString(roomId);
-        const normalizedUserId = NormalizeObjectId.getObjectIdOrString(userId);
+        const normalizedRoomIds = [
+            ...[NormalizeObjectId.getObjectIdOrString(roomId)].flat(),
+            new Types.ObjectId(roomId),
+            roomId.toString(),
+        ];
 
-        const room = await this.roomModel.findById(normalizedRoomId).lean();
+        const room = await this.roomModel.findOne({
+            _id: { $in: normalizedRoomIds }
+        }).lean();
+
         if (!room) {
             throw new NotFoundException('room.not.found');
         }
@@ -111,7 +131,7 @@ export class DirectService {
         }
 
         const members = await this.memberModel.find({
-            roomId: { $in: [normalizedRoomId, roomId.toString()] }
+            roomId: { $in: normalizedRoomIds }
         }).lean();
 
         const isMember = members.some(m => m.userId.toString() === userId.toString());
@@ -122,11 +142,12 @@ export class DirectService {
         const now = new Date();
 
         await this.memberModel.updateMany(
-            { roomId: { $in: [normalizedRoomId, roomId.toString()] } },
+            { roomId: { $in: normalizedRoomIds } },
             {
                 $set: {
                     clearedAt: now,
                     isHiddenInList: true,
+                    pinnedAt: null,
                 }
             }
         );
@@ -143,4 +164,5 @@ export class DirectService {
             }
         };
     }
+
 }

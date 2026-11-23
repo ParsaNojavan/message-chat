@@ -315,19 +315,27 @@ export class ChatService {
     const memberships = await this.memberModel
       .find({
         userId: { $in: userObjectId },
-        isHiddenInList: { $ne: true }
+        isHiddenInList: { $ne: true },
       })
       .populate({
         path: 'roomId',
-        select: 'type name avatar createdAt updatedAt',
+        match: { deletedAt: null },
+        select: 'type name avatar createdAt updatedAt deletedAt',
       })
       .lean()
       .exec();
 
-    const roomIds = memberships.map((m) => (m.roomId as any)?._id).filter(Boolean);
+    const validMemberships = memberships.filter((m) => m.roomId !== null);
+
+    const roomIds = validMemberships.map((m) => (m.roomId as any)._id);
 
     const lastMessages = await this.messageModel.aggregate([
-      { $match: { roomId: { $in: roomIds } } },
+      {
+        $match: {
+          roomId: { $in: roomIds },
+          deletedAt: null,
+        }
+      },
       { $sort: { createdAt: -1 } },
       {
         $group: {
@@ -336,6 +344,7 @@ export class ChatService {
         }
       }
     ]);
+
 
     const lastMessageMap = new Map(lastMessages.map(item => [item._id.toString(), item.lastMessage]));
 
@@ -414,11 +423,19 @@ export class ChatService {
           joinedAt: member.joinedAt,
           pinnedAt: member.pinnedAt,
           lastMessage: null,
-          isArchived: member.isArchived
+          isArchived: member.isArchived,
+          clearedAt: member.clearedAt || null,
+          isHiddenInList: member.isHiddenInList || false,
         };
 
         const lastMsg = lastMessageMap.get(room._id.toString());
-        if (lastMsg) {
+        const isAfterClear = !member.clearedAt || new Date(lastMsg?.createdAt) > new Date(member.clearedAt);
+
+        if (member.isHiddenInList) {
+          return null;
+        }
+
+        if (lastMsg && isAfterClear) {
           roomData.lastMessage = {
             content: lastMsg.content,
             createdAt: lastMsg.createdAt,
