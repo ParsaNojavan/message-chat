@@ -206,4 +206,79 @@ export class GroupService {
             },
         };
     }
+
+    async leaveGroups(roomIds: string[], userId: string): Promise<DataResultDto<{ leftRoomIds: string[] }>> {
+        if (!roomIds || !Array.isArray(roomIds) || roomIds.length === 0) {
+            throw new BadRequestException('roomIds.array.required');
+        }
+
+        const validIds = roomIds.filter(id => Types.ObjectId.isValid(id));
+        const objectIds = validIds.map(id => new Types.ObjectId(id));
+
+        const groups = await this.roomModel.find({
+            _id: { $in: objectIds },
+            type: ChatType.GROUP
+        }).select('_id').lean();
+
+        const groupObjectIds = groups.map(g => g._id);
+        const groupStrIds = groups.map(g => g._id.toString());
+
+        if (groupObjectIds.length === 0) {
+            throw new BadRequestException('no.valid.groups.found');
+        }
+
+        await this.memberModel.deleteMany({
+            userId: { $in: [NormalizeObjectId.getObjectIdOrString(userId), userId.toString()] },
+            roomId: { $in: [...groupObjectIds, ...groupStrIds] }
+        });
+
+        return {
+            success: true,
+            statusCode: HttpStatus.OK,
+            message: 'groups.left.successfully',
+            data: {
+                leftRoomIds: groupStrIds
+            }
+        };
+    }
+
+    async deleteGroup(roomId: string, userId: string): Promise<DataResultDto<{ roomId: string; memberIds: string[] }>> {
+        if (!roomId || !Types.ObjectId.isValid(roomId)) {
+            throw new BadRequestException('invalid.roomId');
+        }
+
+        const normalizedRoomId = NormalizeObjectId.getObjectIdOrString(roomId);
+        const normalizedUserId = NormalizeObjectId.getObjectIdOrString(userId);
+
+        const member = await this.memberModel.findOne({
+            roomId: { $in: [normalizedRoomId, roomId.toString()] },
+            userId: { $in: [normalizedUserId, userId.toString()] }
+        });
+
+        if (!member || member.role !== RoleType.OWNER) {
+            throw new ForbiddenException('only.owner.can.delete.group');
+        }
+
+        const allMembers = await this.memberModel.find({
+            roomId: { $in: [normalizedRoomId, roomId.toString()] }
+        }).select('userId').lean();
+
+        const memberIds = allMembers.map(m => m.userId.toString());
+
+        await this.memberModel.deleteMany({
+            roomId: { $in: [normalizedRoomId, roomId.toString()] }
+        });
+        await this.roomModel.deleteOne({ _id: normalizedRoomId });
+
+        return {
+            success: true,
+            statusCode: HttpStatus.OK,
+            message: 'group.deleted',
+            data: {
+                roomId: roomId.toString(),
+                memberIds
+            }
+        };
+    }
+
 }

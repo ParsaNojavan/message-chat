@@ -24,4 +24,15 @@ export class ChannelController {
         console.log(data)
         return await this.channelService.removeMember(data.roomId, data.memberId, context)
     }
+
+    @MessagePattern('channel.leave')
+    async leave(@Payload() data: { roomIds: string[] }, @RPCContext() context) {
+        return await this.channelService.leaveChannels(data.roomIds, context.sub);
+    }
+
+    @MessagePattern('channel.delete')
+    async delete(@Payload() data: { roomId: string }, @RPCContext() context) {
+        return await this.channelService.deleteChannel(data.roomId, context.sub);
+    }
+
 }

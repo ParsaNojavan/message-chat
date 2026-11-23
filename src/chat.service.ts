@@ -157,6 +157,15 @@ export class ChatService {
       }
     }
 
+    await this.memberModel.updateMany(
+      {
+        roomId: NormalizeObjectId.getObjectIdOrString(roomId),
+        isHiddenInList: true
+      },
+      { $set: { isHiddenInList: false } }
+    );
+
+
     const members = await this.memberModel
       .find({
         roomId: { $in: NormalizeObjectId.getObjectIdOrString(roomId) },
@@ -304,11 +313,15 @@ export class ChatService {
     const userObjectId = NormalizeObjectId.getObjectIdOrString(userId);
 
     const memberships = await this.memberModel
-      .find({ userId: { $in: userObjectId } })
+      .find({
+        userId: { $in: userObjectId },
+        isHiddenInList: { $ne: true }
+      })
       .populate({
         path: 'roomId',
         select: 'type name avatar createdAt updatedAt',
       })
+      .lean()
       .exec();
 
     const roomIds = memberships.map((m) => (m.roomId as any)?._id).filter(Boolean);
@@ -444,6 +457,12 @@ export class ChatService {
         return roomData;
       })
       .filter((r) => r !== null);
+
+    rooms.sort((a, b) => {
+      const aDate = a.pinnedAt ? new Date(a.pinnedAt) : (a.lastMessage?.createdAt ? new Date(a.lastMessage.createdAt) : new Date(0));
+      const bDate = b.pinnedAt ? new Date(b.pinnedAt) : (b.lastMessage?.createdAt ? new Date(b.lastMessage.createdAt) : new Date(0));
+      return bDate.getTime() - aDate.getTime();
+    });
 
     return {
       success: true,
@@ -715,6 +734,13 @@ export class ChatService {
       query.createdAt = { $lt: cursorDate };
     }
 
+    if (memberShip?.clearedAt) {
+      query.createdAt = {
+        ...(query.createdAt || {}),
+        $gt: memberShip.clearedAt,
+      };
+    }
+
     const messages = await this.messageModel
       .find(query)
       .sort({ createdAt: -1 })
@@ -812,7 +838,12 @@ export class ChatService {
       if (msg.replyTo) {
         const rawReply = replyMap.get(msg.replyTo.toString());
         if (rawReply) {
-          if (rawReply.deletedAt) {
+
+          const isReplyHiddenForUser =
+            hiddenMessageIds.some((id) => id.toString() === rawReply._id.toString()) ||
+            (memberShip?.clearedAt && new Date(rawReply.createdAt) <= new Date(memberShip.clearedAt));
+
+          if (rawReply.deletedAt || isReplyHiddenForUser) {
             replyTo = {
               _id: rawReply._id,
               isDeleted: true,
