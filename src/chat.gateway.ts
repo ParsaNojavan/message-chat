@@ -18,6 +18,10 @@ import { ChatService } from './chat.service';
 import redis from 'ioredis';
 import ReactionDto from '@app/contracts/models/dtos/chat/reaction.dto';
 import { GroupRtcService } from './group-rtc/group-rtc.service';
+import { ChatType } from '@app/contracts/models/enums/chat-type';
+import { DirectService } from './direct/direct.service';
+import { GroupService } from './group/group.service';
+import { ChannelService } from './channel/channel.service';
 
 @WebSocketGateway({
   cors: {
@@ -28,6 +32,9 @@ export class ChatGateway implements OnModuleInit, OnGatewayConnection, OnGateway
 
   constructor(private readonly chatService: ChatService,
     private readonly groupRtcService: GroupRtcService,
+    private readonly directService: DirectService,
+    private readonly groupService: GroupService,
+    private readonly channelService: ChannelService,
     private readonly jwtService: JwtService,
     @Inject('REDIS_CLIENT') private readonly redis: redis,
     @Inject('REDIS_SUB_CLIENT') private readonly redisSub: redis,) { }
@@ -511,4 +518,102 @@ export class ChatGateway implements OnModuleInit, OnGatewayConnection, OnGateway
     return { success: result.success, message: result.message };
   }
 
+  @UseGuards(WsJwtGuard)
+  @SubscribeMessage('room.delete.me')
+  async handleDeleteRoomsForMe(
+    @ConnectedSocket() client: AuthenticatedSocket,
+    @MessageBody() body: { roomIds: string[] },
+  ) {
+    const userId = client.data.user.sub;
+    const result = await this.directService.deleteRoomsForMe(body.roomIds, userId);
+
+    if (result.success && result.data) {
+
+      this.server.to(userId).emit('room.deleted.me', {
+        roomIds: result.data.deletedRoomIds,
+      });
+    }
+
+    return result;
+  }
+
+  @UseGuards(WsJwtGuard)
+  @SubscribeMessage('direct.delete.mutual')
+  async handleDeleteDirectMutual(
+    @ConnectedSocket() client: AuthenticatedSocket,
+    @MessageBody() body: { roomId: string },
+  ) {
+    const userId = client.data.user.sub;
+    const result = await this.directService.deleteDirectMutual(body.roomId, userId);
+
+    if (result.success && result.data) {
+
+      result.data.participantIds.forEach(participantId => {
+        this.server.to(participantId).emit('direct.deleted.mutual', {
+          roomId: result.data.roomId,
+        });
+      });
+    }
+
+    return result;
+  }
+
+  @UseGuards(WsJwtGuard)
+  @SubscribeMessage('room.leave.permanent')
+  async handleLeaveRoomsPermanent(
+    @ConnectedSocket() client: AuthenticatedSocket,
+    @MessageBody() body: { roomIds: string[]; type: ChatType.GROUP | ChatType.CHANNEL },
+  ) {
+    const userId = client.data.user.sub;
+
+    const result = body.type === ChatType.CHANNEL
+      ? await this.channelService.leaveChannels(body.roomIds, userId)
+      : await this.groupService.leaveGroups(body.roomIds, userId);
+
+    if (result.success && result.data) {
+
+      for (const rId of result.data.leftRoomIds) {
+        await client.leave(rId);
+
+        this.server.to(rId).emit('room.member.left', {
+          roomId: rId,
+          userId: userId,
+        });
+      }
+
+      this.server.to(userId).emit('room.left.permanent', {
+        roomIds: result.data.leftRoomIds,
+        type: body.type,
+      });
+    }
+
+    return result;
+  }
+
+  @UseGuards(WsJwtGuard)
+  @SubscribeMessage('room.destroy')
+  async handleDestroyRoom(
+    @ConnectedSocket() client: AuthenticatedSocket,
+    @MessageBody() body: { roomId: string; type: ChatType.GROUP | ChatType.CHANNEL },
+  ) {
+    const userId = client.data.user.sub;
+
+    const result = body.type === ChatType.CHANNEL
+      ? await this.channelService.deleteChannel(body.roomId, userId)
+      : await this.groupService.deleteGroup(body.roomId, userId);
+
+    if (result.success && result.data) {
+
+      result.data.memberIds.forEach(memberId => {
+        this.server.to(memberId).emit('room.destroyed', {
+          roomId: result.data.roomId,
+          type: body.type,
+        });
+      });
+
+      this.server.in(result.data.roomId).socketsLeave(result.data.roomId);
+    }
+
+    return result;
+  }
 }

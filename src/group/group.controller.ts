@@ -42,4 +42,14 @@ export class GroupController {
         );
     }
 
+    @MessagePattern('group.leave')
+    async leave(@Payload() data: { roomIds: string[] }, @RPCContext() context) {
+        return await this.groupService.leaveGroups(data.roomIds, context.sub);
+    }
+
+    @MessagePattern('group.delete')
+    async delete(@Payload() data: { roomId: string }, @RPCContext() context) {
+        return await this.groupService.deleteGroup(data.roomId, context.sub);
+    }
+
 }

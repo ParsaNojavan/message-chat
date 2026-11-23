@@ -23,6 +23,8 @@ import { Call, CallSchema } from './models/concrete/call';
 import { ChatFolderModule } from './chat-folder/chat-folder.module';
 import ChatFolder, { ChatFolderSchema } from './models/concrete/chat-folder';
 import HiddenMessage, { HiddenMessageSchema } from './models/concrete/hidden-message';
+import { DirectService } from './direct/direct.service';
+import { ChannelService } from './channel/channel.service';
 
 @Module({
   imports: [
@@ -72,10 +74,10 @@ import HiddenMessage, { HiddenMessageSchema } from './models/concrete/hidden-mes
       { name: Room.name, schema: RoomSchema },
       { name: RoomMember.name, schema: RoomMemberSchema },
       { name: Message.name, schema: MessageSchema },
-      { name: Reaction.name, schema: ReactionSchema},
-      { name: Call.name, schema: CallSchema},
-      { name: ChatFolder.name, schema: ChatFolderSchema},
-      { name: HiddenMessage.name, schema: HiddenMessageSchema},
+      { name: Reaction.name, schema: ReactionSchema },
+      { name: Call.name, schema: CallSchema },
+      { name: ChatFolder.name, schema: ChatFolderSchema },
+      { name: HiddenMessage.name, schema: HiddenMessageSchema },
     ]),
     GroupModule,
     DirectModule,
@@ -85,6 +87,7 @@ import HiddenMessage, { HiddenMessageSchema } from './models/concrete/hidden-mes
   ],
   controllers: [ChatController],
   providers: [ChatGateway, WsJwtGuard, ChatService,
+    GroupService, DirectService, ChannelService,
     {
       provide: 'REDIS_CLIENT',
       useFactory: (configService: ConfigService) => {

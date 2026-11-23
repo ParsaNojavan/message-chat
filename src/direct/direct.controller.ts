@@ -11,4 +11,14 @@ export class DirectController {
     async create(@Payload() data: { userId }, @RPCContext() context) {
         return await this.directService.createDirectChat(data.userId, context)
     }
+
+    @MessagePattern('direct.delete.me')
+    async deleteForMe(@Payload() data: { roomIds: string[] }, @RPCContext() context) {
+        return await this.directService.deleteRoomsForMe(data.roomIds, context.sub);
+    }
+
+    @MessagePattern('direct.delete.mutual')
+    async deleteMutual(@Payload() data: { roomId: string }, @RPCContext() context) {
+        return await this.directService.deleteDirectMutual(data.roomId, context.sub);
+    }
 }
