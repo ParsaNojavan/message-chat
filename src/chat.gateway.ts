@@ -22,6 +22,8 @@ import { ChatType } from '@app/contracts/models/enums/chat-type';
 import { DirectService } from './direct/direct.service';
 import { GroupService } from './group/group.service';
 import { ChannelService } from './channel/channel.service';
+import { WallpaperService } from './wallpaper/wallpaper.service';
+import { WallpaperConfig } from './models/concrete/wallpaper';
 
 @WebSocketGateway({
   cors: {
@@ -35,6 +37,7 @@ export class ChatGateway implements OnModuleInit, OnGatewayConnection, OnGateway
     private readonly directService: DirectService,
     private readonly groupService: GroupService,
     private readonly channelService: ChannelService,
+    private readonly wallpaperService: WallpaperService,
     private readonly jwtService: JwtService,
     @Inject('REDIS_CLIENT') private readonly redis: redis,
     @Inject('REDIS_SUB_CLIENT') private readonly redisSub: redis,) { }
@@ -616,4 +619,111 @@ export class ChatGateway implements OnModuleInit, OnGatewayConnection, OnGateway
 
     return result;
   }
+
+  @UseGuards(WsJwtGuard)
+  @SubscribeMessage('wallpaper.set')
+  async handleSetRoomWallpaper(
+    @MessageBody() data: { roomId: string; config: WallpaperConfig },
+    @ConnectedSocket() client: AuthenticatedSocket
+  ) {
+    const userId = client.data.user.sub;
+
+    const isBlocked = await this.chatService.isUserBlockedInRoom(data.roomId, userId);
+    if (isBlocked) {
+      return { event: 'error', data: { message: 'You are blocked.' } };
+    }
+
+    const result = await this.wallpaperService.uploadNewWallpaper(data.roomId, userId, data.config);
+
+    if (result.success) {
+
+      this.server.to(data.roomId).emit('wallpaper-updated', {
+        roomId: data.roomId,
+        config: data.config,
+        senderId: userId
+      });
+    }
+
+    return result;
+  }
+
+  @UseGuards(WsJwtGuard)
+  @SubscribeMessage('wallpaper.global.save')
+  async handleSaveGlobalWallpaper(
+    @MessageBody() data: { config: WallpaperConfig },
+    @ConnectedSocket() client: AuthenticatedSocket
+  ) {
+    const userId = client.data.user.sub;
+    const result = await this.wallpaperService.saveGlobalWallpaper(userId, data.config);
+    return result;
+  }
+
+  @UseGuards(WsJwtGuard)
+  @SubscribeMessage('wallpaper.switch')
+  async handleSwitchWallpaper(
+    @MessageBody() data: { roomId: string, wallpaperId: string },
+    @ConnectedSocket() client: AuthenticatedSocket
+  ) {
+    const userId = client.data.user.sub;
+
+    const isBlocked = await this.chatService.isUserBlockedInRoom(data.roomId, userId);
+    if (isBlocked) {
+      return { event: 'error', data: { message: 'You are blocked.' } };
+    }
+
+    const result = await this.wallpaperService.switchWallpaper(
+      data.roomId,
+      userId,
+      data.wallpaperId
+    );
+
+    if (result.success) {
+      this.server.to(data.roomId).emit('wallpaper-updated', {
+        roomId: data.roomId,
+        wallpaperId: data.wallpaperId,
+        senderId: userId
+      });
+    }
+
+    return result;
+  }
+
+  @UseGuards(WsJwtGuard)
+  @SubscribeMessage('wallpaper.global.select')
+  async handleSelectGlobalWallpaper(
+    @MessageBody() data: { value: string },
+    @ConnectedSocket() client: AuthenticatedSocket
+  ) {
+    const userId = client.data.user.sub;
+
+    const result = await this.wallpaperService.selectGlobalWallpaper(userId, data.value);
+
+    if (result.success) {
+      this.server.to(userId).emit('global-wallpaper-updated', {
+        newWallpaper: result.data.activeGlobalWallpaper
+      });
+    }
+
+    return result;
+  }
+
+  @UseGuards(WsJwtGuard)
+  @SubscribeMessage('wallpaper.global.set')
+  async handleSetGlobalWallpaper(
+    @MessageBody() data: { config: WallpaperConfig },
+    @ConnectedSocket() client: AuthenticatedSocket
+  ) {
+    const userId = client.data.user.sub;
+
+    const result = await this.wallpaperService.setGlobalWallpaper(userId, data.config);
+
+    if (result.success) {
+      this.server.to(userId).emit('global-wallpaper-updated', {
+        newWallpaper: result.data.activeGlobalWallpaper
+      });
+    }
+
+    return result;
+  }
+
 }
