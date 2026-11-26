@@ -219,18 +219,28 @@ export class ChatService {
     }
   }
 
-  async getUsersPresence(userIds: string[]): Promise<Record<string, string>> {
+  async getUsersPresence(userIds: string[]): Promise<Record<string, { status: string; lastSeenAt?: string }>> {
     if (!userIds || userIds.length === 0) return {};
 
-    const keys = userIds.map((id) => `presence:user-status:${id}`);
-    const connectionCounts = await this.redis.mget(keys);
+    const statusKeys = userIds.map((id) => `presence:user-status:${id}`);
+    const lastSeenKeys = userIds.map((id) => `user:lastseen:${id}`);
 
-    const result: Record<string, string> = {};
+    const [connectionCounts, lastSeenValues] = await Promise.all([
+      this.redis.mget(statusKeys),
+      this.redis.mget(lastSeenKeys),
+    ]);
+
+    const result: Record<string, { status: string; lastSeenAt?: string }> = {};
 
     userIds.forEach((id, index) => {
       const val = connectionCounts[index];
       const count = val ? parseInt(val, 10) : 0;
-      result[id] = count > 0 ? 'online' : 'offline';
+      const isOnline = count > 0;
+
+      result[id] = {
+        status: isOnline ? 'online' : 'offline',
+        lastSeenAt: !isOnline ? (lastSeenValues[index] || undefined) : undefined,
+      };
     });
 
     return result;
@@ -345,7 +355,6 @@ export class ChatService {
       }
     ]);
 
-
     const lastMessageMap = new Map(lastMessages.map(item => [item._id.toString(), item.lastMessage]));
 
     const dmRoomIds = memberships
@@ -407,6 +416,16 @@ export class ChatService {
     if (fetchPromises.length > 0) {
       await Promise.all(fetchPromises);
     }
+    let presencesMap: Record<string, { status: string; lastSeenAt: string | null }> = {};
+    if (dmTargetUserIds.length > 0) {
+      const rawPresences = await this.getUsersPresence(dmTargetUserIds);
+      presencesMap = Object.fromEntries(
+        Object.entries(rawPresences).map(([id, p]) => [
+          id,
+          { status: p.status, lastSeenAt: p.lastSeenAt ?? null }
+        ])
+      );
+    }
 
     const rooms = memberships
       .map((member) => {
@@ -454,10 +473,21 @@ export class ChatService {
             roomData.targetUserId = targetUserId;
             const targetUser = usersDetailMap.get(targetUserId);
             const contact = contactsMap.get(targetUserId);
+            const presence = presencesMap[targetUserId] || { status: 'offline', lastSeenAt: null };
 
             if (targetUser) {
-              roomData.otherUser = targetUser;
+              roomData.otherUser = {
+                ...targetUser,
+                status: presence.status,
+                lastSeenAt: presence.lastSeenAt,
+              };
               roomData.avatar = targetUser.photoUrl || targetUser.avatar || roomData.avatar;
+            } else {
+              roomData.otherUser = {
+                id: targetUserId,
+                status: presence.status,
+                lastSeenAt: presence.lastSeenAt,
+              };
             }
 
             if (contact) {
@@ -1526,5 +1556,20 @@ export class ChatService {
       }
     };
   }
+
+  async getUsersLastSeen(userIds: string[]): Promise<Record<string, string | null>> {
+    if (!userIds || userIds.length === 0) return {};
+
+    const keys = userIds.map((id) => `user:lastseen:${id}`);
+    const values = await this.redis.mget(keys);
+
+    const result: Record<string, string | null> = {};
+    userIds.forEach((id, index) => {
+      result[id] = values[index] || null;
+    });
+
+    return result;
+  }
+
 
 }

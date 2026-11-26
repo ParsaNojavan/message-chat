@@ -205,12 +205,19 @@ export class ChatGateway implements OnModuleInit, OnGatewayConnection, OnGateway
   async handleDisconnect(client: AuthenticatedSocket) {
     const userId = client.data?.user?.sub?.toString();
 
-    if (!userId) {
-      return;
-    }
+    if (!userId) return;
 
     await client.leave(userId);
     await this.chatService.setUserOffline(userId);
+
+    const lastSeenAt = new Date().toISOString();
+    await this.redis.set(`user:lastseen:${userId}`, lastSeenAt);
+
+    this.redis.publish('presence:events', JSON.stringify({
+      userId,
+      status: 'offline',
+      lastSeenAt,
+    }));
 
     this.logger.log(
       `Client ${client.id} disconnected for user ${userId}`,
