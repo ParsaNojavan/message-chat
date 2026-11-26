@@ -25,6 +25,9 @@ import ChatFolder, { ChatFolderSchema } from './models/concrete/chat-folder';
 import HiddenMessage, { HiddenMessageSchema } from './models/concrete/hidden-message';
 import { DirectService } from './direct/direct.service';
 import { ChannelService } from './channel/channel.service';
+import { WallpaperModule } from './wallpaper/wallpaper.module';
+import { UserGlobalWallpaper, UserGlobalWallpaperSchema, UserWallpaperSetting, UserWallpaperSettingSchema, WallpaperConfig, WallpaperConfigSchema } from './models/concrete/wallpaper';
+import { WallpaperService } from './wallpaper/wallpaper.service';
 
 @Module({
   imports: [
@@ -78,16 +81,20 @@ import { ChannelService } from './channel/channel.service';
       { name: Call.name, schema: CallSchema },
       { name: ChatFolder.name, schema: ChatFolderSchema },
       { name: HiddenMessage.name, schema: HiddenMessageSchema },
+      { name: WallpaperConfig.name, schema: WallpaperConfigSchema },
+      { name: UserWallpaperSetting.name, schema: UserWallpaperSettingSchema },
+      { name: UserGlobalWallpaper.name, schema: UserGlobalWallpaperSchema },
     ]),
     GroupModule,
     DirectModule,
     ChannelModule,
     GroupRtcModule,
     ChatFolderModule,
+    WallpaperModule,
   ],
   controllers: [ChatController],
   providers: [ChatGateway, WsJwtGuard, ChatService,
-    GroupService, DirectService, ChannelService,
+    GroupService, DirectService, ChannelService, WallpaperService,
     {
       provide: 'REDIS_CLIENT',
       useFactory: (configService: ConfigService) => {
